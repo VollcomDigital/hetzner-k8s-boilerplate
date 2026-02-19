@@ -159,8 +159,30 @@ resource "null_resource" "kubeconfig" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      echo "Waiting for k3s to initialize..."
-      sleep 60
+      echo "Waiting for k3s kubeconfig to become available..."
+      max_attempts=40
+      retry_interval=15
+      attempt=1
+
+      while [ "$attempt" -le "$max_attempts" ]; do
+        if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          -i ${var.ssh_private_key_path} \
+          root@${module.servers.control_plane_ips[0]} \
+          'test -f /etc/rancher/k3s/k3s.yaml'; then
+          echo "k3s kubeconfig is ready."
+          break
+        fi
+
+        if [ "$attempt" -eq "$max_attempts" ]; then
+          echo "Timed out waiting for /etc/rancher/k3s/k3s.yaml on control plane node." >&2
+          exit 1
+        fi
+
+        echo "Attempt $attempt/$max_attempts: kubeconfig not ready yet, retrying in $retry_interval seconds..."
+        sleep "$retry_interval"
+        attempt=$((attempt + 1))
+      done
+
       ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         -i ${var.ssh_private_key_path} \
         root@${module.servers.control_plane_ips[0]} \

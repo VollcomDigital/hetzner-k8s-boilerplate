@@ -139,8 +139,8 @@ smoke-test-quick: ## Run infra-only checks (no app deploy)
 
 kubeconfig: ## Fetch kubeconfig from first control-plane node
 	@FIRST_CP=$$(cd $(TERRAFORM_DIR) && terraform output -json control_plane_ips | jq -r '.[0]'); \
-	SSH_KEY=$$(cd $(TERRAFORM_DIR) && terraform output -raw ssh_command_cp | grep -oP '(?<=-i )\S+'); \
-	ssh -o StrictHostKeyChecking=no -i $$SSH_KEY root@$$FIRST_CP \
+	SSH_KEY=$$(cd $(TERRAFORM_DIR) && terraform output -raw ssh_private_key_path); \
+	ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $$SSH_KEY root@$$FIRST_CP \
 		'cat /etc/rancher/k3s/k3s.yaml' | \
 		sed "s|https://127.0.0.1:6443|$$(cd $(TERRAFORM_DIR) && terraform output -raw api_server_url)|g" \
 		> $(KUBECONFIG); \

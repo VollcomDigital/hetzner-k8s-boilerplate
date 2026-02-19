@@ -28,6 +28,11 @@ output "ssh_command_cp" {
   value       = "ssh -i ${var.ssh_private_key_path} root@<CONTROL_PLANE_IP>"
 }
 
+output "ssh_private_key_path" {
+  description = "Path to SSH private key used for connecting to nodes"
+  value       = pathexpand(var.ssh_private_key_path)
+}
+
 output "k3s_token" {
   description = "k3s cluster join token"
   value       = module.servers.k3s_token
