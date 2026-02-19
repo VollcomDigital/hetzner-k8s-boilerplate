@@ -71,18 +71,18 @@ export KUBECONFIG="${KUBECONFIG:-$PROJECT_DIR/kubeconfig.yaml}"
 
 TOTAL_STEPS=8
 OPTIONAL_STEPS=0
-$OPT_LOGGING          && ((OPTIONAL_STEPS++))
-$OPT_ARGOCD           && ((OPTIONAL_STEPS++))
-$OPT_SECURITY         && ((OPTIONAL_STEPS++))
-$OPT_EXTERNAL_DNS     && ((OPTIONAL_STEPS++))
-$OPT_AUTOSCALER       && ((OPTIONAL_STEPS++))
-$OPT_VELERO           && ((OPTIONAL_STEPS++))
-$OPT_EXTERNAL_SECRETS && ((OPTIONAL_STEPS++))
+$OPT_LOGGING          && ((++OPTIONAL_STEPS)) || true
+$OPT_ARGOCD           && ((++OPTIONAL_STEPS)) || true
+$OPT_SECURITY         && ((++OPTIONAL_STEPS)) || true
+$OPT_EXTERNAL_DNS     && ((++OPTIONAL_STEPS)) || true
+$OPT_AUTOSCALER       && ((++OPTIONAL_STEPS)) || true
+$OPT_VELERO           && ((++OPTIONAL_STEPS)) || true
+$OPT_EXTERNAL_SECRETS && ((++OPTIONAL_STEPS)) || true
 TOTAL_STEPS=$((TOTAL_STEPS + OPTIONAL_STEPS))
 CURRENT_STEP=0
 
 next_step() {
-  ((CURRENT_STEP++))
+  ((++CURRENT_STEP))
   step "$CURRENT_STEP/$TOTAL_STEPS — $1"
 }
 
@@ -100,7 +100,7 @@ RETRIES=30
 until [[ -f "$KUBECONFIG" ]] || [[ $RETRIES -eq 0 ]]; do
   warn "Waiting for kubeconfig... ($RETRIES attempts remaining)"
   sleep 10
-  ((RETRIES--))
+  ((--RETRIES)) || true
 done
 
 [[ -f "$KUBECONFIG" ]] || error "Kubeconfig not found at $KUBECONFIG"
@@ -114,7 +114,7 @@ RETRIES=60
 until kubectl get nodes 2>/dev/null | grep -q "Ready"; do
   [[ $RETRIES -eq 0 ]] && error "Nodes did not become Ready in time"
   sleep 10
-  ((RETRIES--))
+  ((--RETRIES)) || true
 done
 
 kubectl get nodes -o wide
@@ -143,7 +143,7 @@ RETRIES=12
 until kubectl top nodes &>/dev/null; do
   [[ $RETRIES -eq 0 ]] && { warn "metrics-server not responding — HPA will not function."; break; }
   sleep 10
-  ((RETRIES--))
+  ((--RETRIES)) || true
 done
 if kubectl top nodes &>/dev/null; then
   info "metrics-server is operational."

@@ -24,9 +24,9 @@ PASS=0
 FAIL=0
 WARN=0
 
-pass() { echo -e "  ${GREEN}PASS${NC}  $*"; ((PASS++)); }
-fail() { echo -e "  ${RED}FAIL${NC}  $*"; ((FAIL++)); }
-warn() { echo -e "  ${YELLOW}WARN${NC}  $*"; ((WARN++)); }
+pass() { echo -e "  ${GREEN}PASS${NC}  $*"; ((++PASS)); }
+fail() { echo -e "  ${RED}FAIL${NC}  $*"; ((++FAIL)); }
+warn() { echo -e "  ${YELLOW}WARN${NC}  $*"; ((++WARN)); }
 section() { echo -e "\n${CYAN}--- $* ---${NC}"; }
 
 SKIP_APP=false

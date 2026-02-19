@@ -52,7 +52,7 @@ upgrade_node() {
   until kubectl get node "$NODE_NAME" 2>/dev/null | grep -q "Ready"; do
     [[ $RETRIES -eq 0 ]] && error "Node ${NODE_NAME} did not become Ready"
     sleep 10
-    ((RETRIES--))
+    ((--RETRIES)) || true
   done
 
   info "Uncordoning node ${NODE_NAME}..."
