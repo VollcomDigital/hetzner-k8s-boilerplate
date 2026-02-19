@@ -4,4 +4,6 @@ kind: Kustomization
 namespace: kube-system
 
 resources:
-  - https://github.com/hetznercloud/hcloud-cloud-controller-manager/releases/latest/download/ccm-networks.yaml
+  # Pin to a specific release for reproducible deployments.
+  # Check for updates: https://github.com/hetznercloud/hcloud-cloud-controller-manager/releases
+  - https://github.com/hetznercloud/hcloud-cloud-controller-manager/releases/download/v1.20.0/ccm-networks.yaml

@@ -4,4 +4,6 @@ kind: Kustomization
 namespace: kube-system
 
 resources:
-  - https://raw.githubusercontent.com/hetznercloud/csi-driver/main/deploy/kubernetes/hcloud-csi.yml
+  # Pin to a specific release for reproducible deployments.
+  # Check for updates: https://github.com/hetznercloud/csi-driver/releases
+  - https://raw.githubusercontent.com/hetznercloud/csi-driver/v2.9.0/deploy/kubernetes/hcloud-csi.yml
