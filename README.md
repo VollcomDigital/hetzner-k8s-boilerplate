@@ -122,8 +122,7 @@ kubectl get pods -A
 │   └── modules/
 │       ├── network/                     # Hetzner private network + subnet
 │       ├── firewall/                    # Ingress/egress rules per role
-│       ├── server/                      # Control-plane + worker provisioning
-│       └── load-balancer/               # API server HA load balancer
+│       └── server/                      # Control-plane + worker provisioning
 ├── kubernetes/
 │   ├── core/
 │   │   ├── hcloud-ccm/                  # Hetzner Cloud Controller Manager
@@ -132,10 +131,19 @@ kubectl get pods -A
 │   │   ├── nginx/                       # NGINX Ingress (Helm values + install)
 │   │   └── cert-manager/               # cert-manager + Let's Encrypt issuers
 │   ├── monitoring/                      # kube-prometheus-stack (Helm values)
+│   ├── logging/                         # Loki + Promtail log aggregation
+│   ├── backup/                          # Velero cluster backup & restore
 │   ├── security/
 │   │   ├── network-policies/            # Default deny + allow rules
 │   │   ├── rbac/                        # ClusterRoles for reader/deployer
+│   │   ├── external-secrets/            # External Secrets Operator
 │   │   └── pod-security.yaml            # Pod Security Standards per namespace
+│   ├── system/
+│   │   ├── upgrade-controller/          # k3s System Upgrade Controller
+│   │   ├── external-dns/                # Automatic DNS record management
+│   │   └── autoscaler/                  # Hetzner node autoscaler
+│   ├── examples/
+│   │   └── sample-app.yaml             # Reference deployment with best practices
 │   └── gitops/
 │       └── argocd/                      # ArgoCD install + app-of-apps pattern
 ├── scripts/

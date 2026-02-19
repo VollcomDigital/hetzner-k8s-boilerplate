@@ -10,7 +10,7 @@ kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -
 
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
   --namespace "$NAMESPACE" \
-  --values kubernetes/ingress/nginx/helmrelease.yaml \
+  --values kubernetes/ingress/nginx/values.yaml \
   --wait --timeout 5m
 
 echo "NGINX Ingress Controller deployed successfully."
