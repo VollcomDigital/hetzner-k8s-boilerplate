@@ -22,7 +22,7 @@ kubectl wait --for=condition=Available deployment/cert-manager-webhook \
   -n "$NAMESPACE" --timeout=120s
 
 # Apply ClusterIssuers with email substitution
-sed "s/\${ACME_EMAIL}/$ACME_EMAIL/g" \
+sed "s#\${ACME_EMAIL}#$ACME_EMAIL#g" \
   kubernetes/ingress/cert-manager/cluster-issuers.yaml | kubectl apply -f -
 
 echo "cert-manager deployed with Let's Encrypt ClusterIssuers."
