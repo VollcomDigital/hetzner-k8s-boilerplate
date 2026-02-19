@@ -1,6 +1,8 @@
 .PHONY: help setup plan apply deploy destroy kubeconfig \
-       ccm csi ingress cert-manager monitoring argocd security \
-       fmt validate lint clean
+       ccm csi ingress cert-manager monitoring logging argocd security \
+       external-secrets external-dns autoscaler upgrade-controller \
+       velero hubble upgrade \
+       fmt validate lint clean nodes pods status
 
 SHELL := /bin/bash
 TERRAFORM_DIR := terraform
@@ -18,7 +20,7 @@ help: ## Show this help
 	@echo "=============================="
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 
 # ============================================================================
@@ -44,7 +46,7 @@ destroy: ## Destroy all infrastructure (DANGEROUS)
 	@bash scripts/destroy.sh
 
 # ============================================================================
-# Kubernetes Components
+# Core Components
 # ============================================================================
 
 ccm: ## Deploy Hetzner Cloud Controller Manager
@@ -60,16 +62,52 @@ ingress: ## Deploy NGINX Ingress Controller
 cert-manager: ## Deploy cert-manager with Let's Encrypt
 	@bash kubernetes/ingress/cert-manager/install.sh
 
+# ============================================================================
+# Observability
+# ============================================================================
+
 monitoring: ## Deploy Prometheus + Grafana monitoring stack
 	@bash kubernetes/monitoring/install.sh
+
+logging: ## Deploy Loki + Promtail logging stack
+	@bash kubernetes/logging/install.sh
+
+hubble: ## Apply Hubble UI Ingress for network observability
+	kubectl apply -f kubernetes/core/hubble-ingress.yaml
+
+# ============================================================================
+# Security
+# ============================================================================
+
+security: ## Apply network policies, RBAC, and pod security
+	kubectl apply -f kubernetes/security/network-policies/
+	kubectl apply -f kubernetes/security/rbac/
+	kubectl apply -f kubernetes/security/pod-security.yaml
+
+external-secrets: ## Deploy External Secrets Operator
+	@bash kubernetes/security/external-secrets/install.sh
+
+# ============================================================================
+# System & Operations
+# ============================================================================
 
 argocd: ## Deploy ArgoCD for GitOps
 	@bash kubernetes/gitops/argocd/install.sh
 
-security: ## Apply network policies and RBAC templates
-	kubectl apply -f kubernetes/security/network-policies/
-	kubectl apply -f kubernetes/security/rbac/
-	kubectl apply -f kubernetes/security/pod-security.yaml
+velero: ## Deploy Velero backup system
+	@bash kubernetes/backup/velero/install.sh
+
+external-dns: ## Deploy external-dns for automatic DNS management
+	@bash kubernetes/system/external-dns/install.sh
+
+autoscaler: ## Deploy Hetzner Cluster Autoscaler
+	@bash kubernetes/system/autoscaler/install.sh
+
+upgrade-controller: ## Deploy k3s System Upgrade Controller
+	@bash kubernetes/system/upgrade-controller/install.sh
+
+upgrade: ## Rolling k3s upgrade (usage: make upgrade VERSION=v1.30.2+k3s1)
+	@bash scripts/upgrade.sh $(VERSION)
 
 # ============================================================================
 # Utilities
@@ -98,8 +136,14 @@ status: ## Cluster health overview
 	@echo "=== System Pods ==="
 	@kubectl get pods -n kube-system
 	@echo ""
-	@echo "=== All Namespaces ==="
+	@echo "=== Unhealthy Pods ==="
 	@kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
+	@echo ""
+	@echo "=== Persistent Volumes ==="
+	@kubectl get pv 2>/dev/null || true
+	@echo ""
+	@echo "=== Backup Status ==="
+	@kubectl get backupstoragelocations -n velero 2>/dev/null || echo "  Velero not installed"
 
 fmt: ## Format Terraform files
 	cd $(TERRAFORM_DIR) && terraform fmt -recursive

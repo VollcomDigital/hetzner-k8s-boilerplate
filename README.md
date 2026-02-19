@@ -46,6 +46,12 @@ Production-ready Kubernetes cluster on [Hetzner Cloud](https://www.hetzner.com/c
 | **Ingress** | NGINX Ingress | HTTP/HTTPS traffic routing |
 | **TLS** | cert-manager | Automated Let's Encrypt certificates |
 | **Monitoring** | kube-prometheus-stack | Prometheus + Grafana + Alertmanager |
+| **Logging** | Loki + Promtail | Centralized log aggregation (Grafana-native) |
+| **Backup** | Velero + etcd snapshots | Cluster state backup & disaster recovery |
+| **Secrets** | External Secrets Operator | Sync secrets from Vault, AWS, etc. |
+| **DNS** | external-dns | Automatic DNS records from Ingress resources |
+| **Autoscaling** | Cluster Autoscaler | Dynamic worker node scaling |
+| **Upgrades** | System Upgrade Controller | Automated rolling k3s upgrades via CRDs |
 | **GitOps** | ArgoCD | Continuous deployment from Git |
 | **Encryption** | WireGuard (Cilium) | Pod-to-pod traffic encryption |
 
@@ -160,27 +166,45 @@ kubectl get pods -A
 ## Make Targets
 
 ```
-make help          Show all available targets
-make setup         Run pre-flight checks
-make plan          Preview Terraform changes
-make apply         Apply Terraform changes
-make deploy        Full deployment (infra + all K8s components)
-make destroy       Tear down everything (with confirmation)
-make ccm           Deploy Hetzner Cloud Controller Manager
-make csi           Deploy Hetzner CSI Driver
-make ingress       Deploy NGINX Ingress Controller
-make cert-manager  Deploy cert-manager
-make monitoring    Deploy Prometheus + Grafana
-make argocd        Deploy ArgoCD
-make security      Apply network policies + RBAC
-make kubeconfig    Fetch kubeconfig from cluster
-make status        Cluster health overview
-make nodes         List nodes
-make pods          List all pods
-make fmt           Format Terraform files
-make validate      Validate Terraform configuration
-make lint          Format + validate
-make clean         Remove local artifacts
+Infrastructure:
+  make setup              Run pre-flight checks
+  make plan               Preview Terraform changes
+  make apply              Apply Terraform changes
+  make deploy             Full deployment (infra + all K8s components)
+  make destroy            Tear down everything (with confirmation)
+
+Core Components:
+  make ccm                Deploy Hetzner Cloud Controller Manager
+  make csi                Deploy Hetzner CSI Driver
+  make ingress            Deploy NGINX Ingress Controller
+  make cert-manager       Deploy cert-manager
+
+Observability:
+  make monitoring         Deploy Prometheus + Grafana
+  make logging            Deploy Loki + Promtail
+  make hubble             Apply Hubble UI Ingress
+
+Security:
+  make security           Apply network policies + RBAC + pod security
+  make external-secrets   Deploy External Secrets Operator
+
+System & Operations:
+  make argocd             Deploy ArgoCD for GitOps
+  make velero             Deploy Velero backup system
+  make external-dns       Deploy external-dns
+  make autoscaler         Deploy Hetzner Cluster Autoscaler
+  make upgrade-controller Deploy k3s System Upgrade Controller
+  make upgrade VERSION=v1.30.2+k3s1   Rolling k3s upgrade
+
+Utilities:
+  make kubeconfig         Fetch kubeconfig from cluster
+  make status             Cluster health overview
+  make nodes              List nodes
+  make pods               List all pods
+  make fmt                Format Terraform files
+  make validate           Validate Terraform configuration
+  make lint               Format + validate
+  make clean              Remove local artifacts
 ```
 
 ## Configuration
@@ -233,13 +257,58 @@ environment               = "production"
 - **HSTS**: Enforced via NGINX Ingress
 - **Anonymous auth disabled**: On the API server
 
+- **Secret management**: External Secrets Operator syncs secrets from Vault, AWS SM, etc.
+- **Alertmanager routing**: Pre-built templates for Slack, PagerDuty, and email
+
 ### Recommended Additions
 
-- **Sealed Secrets** or **External Secrets Operator** for secret management
 - **Falco** for runtime threat detection
 - **OPA/Gatekeeper** for policy enforcement
 - **Dex** for OIDC authentication on the API server
 - Restrict `ssh_allowed_cidrs` and `api_allowed_cidrs` in firewalls
+
+## Logging
+
+Deploy the Loki + Promtail stack for centralized log aggregation:
+
+```bash
+make logging
+```
+
+Logs are automatically available in Grafana under the Loki datasource. Navigate to Explore and select Loki.
+
+Example LogQL queries:
+```
+{namespace="production"}
+{app="hello-world"} |= "error"
+rate({namespace="production"}[5m])
+```
+
+## Backup & Disaster Recovery
+
+### Velero (cluster state)
+
+```bash
+make velero
+```
+
+Pre-configured backup schedules:
+- **Daily full backup** at 02:00 UTC (30-day retention)
+- **Hourly critical namespaces** (production, argocd — 7-day retention)
+
+Manual operations:
+```bash
+velero backup create manual-backup --include-namespaces '*'
+velero backup get
+velero restore create --from-backup <backup-name>
+```
+
+### etcd Snapshots
+
+A CronJob in `kube-system` takes etcd snapshots every 6 hours:
+```bash
+kubectl apply -f kubernetes/backup/etcd-snapshot.yaml
+```
 
 ## Monitoring
 
@@ -283,12 +352,34 @@ The `app-of-apps.yaml` template enables managing all cluster applications from a
 
 ### k3s Version
 
-1. Update `k3s_version` in `terraform.tfvars`
-2. SSH into each node and run:
-   ```bash
-   curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.31.0+k3s1" sh -
-   ```
-3. Upgrade control-plane nodes first (one at a time), then workers
+**Option 1: System Upgrade Controller (recommended)**
+
+```bash
+make upgrade-controller
+```
+
+Edit `kubernetes/system/upgrade-controller/upgrade-plan.yaml` with the target version, then:
+```bash
+kubectl apply -f kubernetes/system/upgrade-controller/upgrade-plan.yaml
+kubectl get plans -n system-upgrade  # monitor progress
+```
+
+The controller drains, upgrades, and uncordons nodes automatically — control plane first, then workers.
+
+**Option 2: Scripted rolling upgrade**
+
+```bash
+make upgrade VERSION=v1.31.0+k3s1
+```
+
+This runs `scripts/upgrade.sh` which drains/upgrades/uncordons each node sequentially with interactive confirmation.
+
+**Option 3: Manual**
+
+SSH into each node (control plane first, one at a time):
+```bash
+curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.31.0+k3s1" sh -
+```
 
 ### Helm Charts
 
