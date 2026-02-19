@@ -39,8 +39,11 @@ plan: init ## Preview infrastructure changes
 apply: init ## Apply infrastructure changes
 	cd $(TERRAFORM_DIR) && terraform apply
 
-deploy: ## Full deployment (infra + k8s components)
+deploy: ## Full deployment (core infra + k8s components)
 	@bash scripts/deploy.sh
+
+deploy-all: ## Full deployment with ALL optional components
+	@bash scripts/deploy.sh --all
 
 destroy: ## Destroy all infrastructure (DANGEROUS)
 	@bash scripts/destroy.sh
@@ -72,17 +75,22 @@ monitoring: ## Deploy Prometheus + Grafana monitoring stack
 logging: ## Deploy Loki + Promtail logging stack
 	@bash kubernetes/logging/install.sh
 
-hubble: ## Apply Hubble UI Ingress for network observability
-	kubectl apply -f kubernetes/core/hubble-ingress.yaml
+hubble: ## Deploy Hubble UI with Ingress and basic-auth
+	@bash kubernetes/core/hubble-install.sh
+
+grafana-ingress: ## Apply Grafana + Alertmanager Ingress manifests
+	kubectl apply -f kubernetes/monitoring/grafana-ingress.yaml
 
 # ============================================================================
 # Security
 # ============================================================================
 
-security: ## Apply network policies, RBAC, and pod security
+security: ## Apply network policies, RBAC, quotas, priority classes
+	kubectl apply -f kubernetes/security/priority-classes.yaml
+	kubectl apply -f kubernetes/security/pod-security.yaml
+	kubectl apply -f kubernetes/security/resource-quotas.yaml 2>/dev/null || true
 	kubectl apply -f kubernetes/security/network-policies/
 	kubectl apply -f kubernetes/security/rbac/
-	kubectl apply -f kubernetes/security/pod-security.yaml
 
 external-secrets: ## Deploy External Secrets Operator
 	@bash kubernetes/security/external-secrets/install.sh

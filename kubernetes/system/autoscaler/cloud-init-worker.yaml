@@ -1,0 +1,53 @@
+#cloud-config
+# Cloud-init template for autoscaled worker nodes.
+# The autoscaler injects this as HCLOUD_CLOUD_INIT (base64-encoded).
+#
+# IMPORTANT: Replace PLACEHOLDER values before encoding:
+#   K3S_VERSION, K3S_TOKEN, API_SERVER_LB
+#
+# Encode: base64 -w0 < kubernetes/system/autoscaler/cloud-init-worker.yaml
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - wireguard
+  - open-iscsi
+  - nfs-common
+
+write_files:
+  - path: /etc/sysctl.d/99-kubernetes.conf
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+      net.ipv6.conf.all.forwarding        = 1
+      fs.inotify.max_user_instances       = 8192
+      fs.inotify.max_user_watches         = 524288
+
+  - path: /etc/modules-load.d/k8s.conf
+    content: |
+      br_netfilter
+      overlay
+      wireguard
+
+runcmd:
+  - sysctl --system
+  - modprobe br_netfilter overlay wireguard
+
+  - |
+    until curl -sk https://API_SERVER_LB:6443/healthz 2>/dev/null; do
+      echo "Waiting for Kubernetes API..."
+      sleep 10
+    done
+
+  - |
+    curl -sfL https://get.k3s.io | \
+      INSTALL_K3S_VERSION="K3S_VERSION" \
+      K3S_URL="https://API_SERVER_LB:6443" \
+      K3S_TOKEN="K3S_TOKEN" \
+      sh -s - agent \
+        --node-name "$(hostname)" \
+        --kubelet-arg "cloud-provider=external" \
+        --kubelet-arg "max-pods=110"

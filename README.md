@@ -93,10 +93,17 @@ make plan
 ### 4. Deploy everything
 
 ```bash
+# Core components only (infra + CCM + CSI + ingress + cert-manager + monitoring)
 make deploy
+
+# Core + all optional components
+make deploy-all
+
+# Core + selected optional components
+./scripts/deploy.sh --logging --argocd --security
 ```
 
-This runs the full pipeline:
+Core pipeline (always runs):
 1. Provisions Hetzner infrastructure (network, firewalls, LB, servers)
 2. Bootstraps k3s HA cluster via cloud-init
 3. Installs Cilium CNI with WireGuard encryption
@@ -104,6 +111,8 @@ This runs the full pipeline:
 5. Installs NGINX Ingress Controller
 6. Deploys cert-manager with Let's Encrypt
 7. Sets up Prometheus + Grafana monitoring
+
+Optional flags: `--logging`, `--argocd`, `--security`, `--external-dns`, `--autoscaler`, `--velero`, `--external-secrets`, or `--all`.
 
 ### 5. Access the cluster
 
@@ -154,12 +163,16 @@ kubectl get pods -A
 │       └── argocd/                      # ArgoCD install + app-of-apps pattern
 ├── scripts/
 │   ├── setup.sh                         # Pre-flight checks
-│   ├── deploy.sh                        # Full deployment pipeline
-│   └── destroy.sh                       # Teardown with confirmation
-├── .github/workflows/
-│   └── validate.yml                     # CI: terraform validate, kubeconform, trivy
-├── Makefile                             # All operations via make targets
+│   ├── deploy.sh                        # Full deployment pipeline (with optional flags)
+│   ├── destroy.sh                       # Teardown with confirmation
+│   └── upgrade.sh                       # Rolling k3s upgrade script
+├── .github/
+│   ├── workflows/validate.yml           # CI: terraform validate, kubeconform, trivy
+│   └── pull_request_template.md         # PR checklist template
+├── Makefile                             # 30+ targets across all categories
 ├── .env.example                         # Environment variable template
+├── CONTRIBUTING.md                      # Development workflow & code standards
+├── LICENSE                              # MIT License
 └── .gitignore
 ```
 
@@ -167,44 +180,46 @@ kubectl get pods -A
 
 ```
 Infrastructure:
-  make setup              Run pre-flight checks
-  make plan               Preview Terraform changes
-  make apply              Apply Terraform changes
-  make deploy             Full deployment (infra + all K8s components)
-  make destroy            Tear down everything (with confirmation)
+  make setup                Run pre-flight checks
+  make plan                 Preview Terraform changes
+  make apply                Apply Terraform changes
+  make deploy               Core deployment (infra + essential K8s components)
+  make deploy-all           Full deployment with ALL optional components
+  make destroy              Tear down everything (with confirmation)
 
 Core Components:
-  make ccm                Deploy Hetzner Cloud Controller Manager
-  make csi                Deploy Hetzner CSI Driver
-  make ingress            Deploy NGINX Ingress Controller
-  make cert-manager       Deploy cert-manager
+  make ccm                  Deploy Hetzner Cloud Controller Manager
+  make csi                  Deploy Hetzner CSI Driver
+  make ingress              Deploy NGINX Ingress Controller
+  make cert-manager         Deploy cert-manager
 
 Observability:
-  make monitoring         Deploy Prometheus + Grafana
-  make logging            Deploy Loki + Promtail
-  make hubble             Apply Hubble UI Ingress
+  make monitoring           Deploy Prometheus + Grafana monitoring stack
+  make logging              Deploy Loki + Promtail logging stack
+  make hubble               Deploy Hubble UI with Ingress + basic-auth
+  make grafana-ingress      Apply Grafana + Alertmanager Ingress manifests
 
 Security:
-  make security           Apply network policies + RBAC + pod security
-  make external-secrets   Deploy External Secrets Operator
+  make security             Apply network policies, RBAC, quotas, priority classes
+  make external-secrets     Deploy External Secrets Operator
 
 System & Operations:
-  make argocd             Deploy ArgoCD for GitOps
-  make velero             Deploy Velero backup system
-  make external-dns       Deploy external-dns
-  make autoscaler         Deploy Hetzner Cluster Autoscaler
-  make upgrade-controller Deploy k3s System Upgrade Controller
-  make upgrade VERSION=v1.30.2+k3s1   Rolling k3s upgrade
+  make argocd               Deploy ArgoCD for GitOps
+  make velero               Deploy Velero backup system
+  make external-dns         Deploy external-dns
+  make autoscaler           Deploy Hetzner Cluster Autoscaler
+  make upgrade-controller   Deploy k3s System Upgrade Controller
+  make upgrade VERSION=v1.30.2+k3s1    Rolling k3s upgrade
 
 Utilities:
-  make kubeconfig         Fetch kubeconfig from cluster
-  make status             Cluster health overview
-  make nodes              List nodes
-  make pods               List all pods
-  make fmt                Format Terraform files
-  make validate           Validate Terraform configuration
-  make lint               Format + validate
-  make clean              Remove local artifacts
+  make kubeconfig           Fetch kubeconfig from cluster
+  make status               Cluster health overview (nodes, pods, PVs, backups)
+  make nodes                List nodes
+  make pods                 List all pods
+  make fmt                  Format Terraform files
+  make validate             Validate Terraform configuration
+  make lint                 Format + validate
+  make clean                Remove local artifacts
 ```
 
 ## Configuration

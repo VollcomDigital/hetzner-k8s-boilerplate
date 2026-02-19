@@ -33,3 +33,18 @@ output "k3s_token" {
   value       = module.servers.k3s_token
   sensitive   = true
 }
+
+output "cluster_name" {
+  description = "Cluster name prefix used for all resources"
+  value       = var.cluster_name
+}
+
+output "k3s_version" {
+  description = "k3s version deployed"
+  value       = var.k3s_version
+}
+
+output "network_id" {
+  description = "Hetzner private network ID"
+  value       = module.network.network_id
+}
