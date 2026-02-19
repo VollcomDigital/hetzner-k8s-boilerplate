@@ -114,12 +114,12 @@ module "servers" {
   cloud_init_worker_path = "${path.module}/cloud-init/worker.yaml.tftpl"
 
   # k3s
-  k3s_version     = var.k3s_version
-  k3s_token       = var.k3s_token
-  api_server_lb   = hcloud_load_balancer.api_pre.ipv4
-  pod_cidr        = var.pod_cidr
-  service_cidr    = var.service_cidr
-  cluster_dns     = var.cluster_dns
+  k3s_version      = var.k3s_version
+  k3s_token        = var.k3s_token
+  api_server_lb_ip = hcloud_load_balancer.api_pre.ipv4
+  pod_cidr         = var.pod_cidr
+  service_cidr     = var.service_cidr
+  cluster_dns      = var.cluster_dns
 
   # SSH
   ssh_public_key_path = var.ssh_public_key_path
