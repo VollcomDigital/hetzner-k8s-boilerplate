@@ -41,10 +41,10 @@ resource "hcloud_server" "control_plane" {
   name        = "${var.cluster_name}-cp-${count.index}"
   server_type = var.control_plane_server_type
   image       = var.control_plane_image
-  location    = var.location
+  location    = length(var.control_plane_locations) > 0 ? var.control_plane_locations[count.index % length(var.control_plane_locations)] : var.location
 
   ssh_keys           = [hcloud_ssh_key.cluster.id]
-  placement_group_id = hcloud_placement_group.control_plane.id
+  placement_group_id = length(var.control_plane_locations) > 0 ? null : hcloud_placement_group.control_plane.id
   firewall_ids       = [var.control_plane_firewall_id]
 
   labels = merge(local.common_labels, {

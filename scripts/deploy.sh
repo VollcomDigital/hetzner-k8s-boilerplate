@@ -69,7 +69,7 @@ done
 
 export KUBECONFIG="${KUBECONFIG:-$PROJECT_DIR/kubeconfig.yaml}"
 
-TOTAL_STEPS=7
+TOTAL_STEPS=8
 OPTIONAL_STEPS=0
 $OPT_LOGGING          && ((OPTIONAL_STEPS++))
 $OPT_ARGOCD           && ((OPTIONAL_STEPS++))
@@ -134,6 +134,22 @@ next_step "Deploy Hetzner CSI Driver"
 kubectl apply -k kubernetes/core/hcloud-csi/
 kubectl apply -f kubernetes/core/hcloud-csi/storage-classes.yaml
 info "Hetzner CSI driver + storage classes deployed."
+
+# =========================================================================
+next_step "Verify Metrics Server"
+# =========================================================================
+info "Waiting for metrics-server to become available..."
+RETRIES=12
+until kubectl top nodes &>/dev/null; do
+  [[ $RETRIES -eq 0 ]] && { warn "metrics-server not responding — HPA will not function."; break; }
+  sleep 10
+  ((RETRIES--))
+done
+if kubectl top nodes &>/dev/null; then
+  info "metrics-server is operational."
+  kubectl top nodes
+fi
+echo ""
 
 # =========================================================================
 next_step "Deploy NGINX Ingress Controller"

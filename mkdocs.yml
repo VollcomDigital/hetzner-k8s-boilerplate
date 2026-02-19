@@ -1,0 +1,74 @@
+site_name: Hetzner Kubernetes Boilerplate
+site_description: Production-ready Kubernetes on Hetzner Cloud with Terraform and k3s
+site_url: https://vollcomdigital.github.io/hetzner-k8s-boilerplate
+repo_url: https://github.com/VollcomDigital/hetzner-k8s-boilerplate
+repo_name: VollcomDigital/hetzner-k8s-boilerplate
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - tables
+  - attr_list
+  - def_list
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Prerequisites: getting-started/prerequisites.md
+      - Quick Start: getting-started/quick-start.md
+      - Configuration: getting-started/configuration.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Networking: architecture/networking.md
+      - Security: architecture/security.md
+  - Components:
+      - Core: components/core.md
+      - Ingress & TLS: components/ingress.md
+      - Monitoring: components/monitoring.md
+      - Logging: components/logging.md
+      - Backup: components/backup.md
+      - GitOps: components/gitops.md
+      - Authentication: components/authentication.md
+      - Registry: components/registry.md
+  - Operations:
+      - Upgrading: operations/upgrading.md
+      - Scaling: operations/scaling.md
+      - Troubleshooting: operations/troubleshooting.md
+  - Contributing: contributing.md

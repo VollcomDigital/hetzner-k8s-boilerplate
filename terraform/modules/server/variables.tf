@@ -6,6 +6,12 @@ variable "location" {
   type = string
 }
 
+variable "control_plane_locations" {
+  description = "Per-node locations for multi-zone CP spread. Empty = use var.location for all."
+  type        = list(string)
+  default     = []
+}
+
 variable "network_id" {
   type = number
 }

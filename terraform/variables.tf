@@ -39,13 +39,24 @@ variable "environment" {
 # -----------------------------------------------------------------------------
 
 variable "location" {
-  description = "Hetzner datacenter location (nbg1, fsn1, hel1, ash, hil)"
+  description = "Primary Hetzner datacenter location (nbg1, fsn1, hel1, ash, hil)"
   type        = string
   default     = "nbg1"
 
   validation {
     condition     = contains(["nbg1", "fsn1", "hel1", "ash", "hil"], var.location)
     error_message = "Location must be a valid Hetzner datacenter."
+  }
+}
+
+variable "control_plane_locations" {
+  description = "Locations for control-plane nodes for multi-zone HA. If empty, all CP nodes use var.location. Must be within the same network_zone."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for l in var.control_plane_locations : contains(["nbg1", "fsn1", "hel1", "ash", "hil"], l)])
+    error_message = "All locations must be valid Hetzner datacenters."
   }
 }
 

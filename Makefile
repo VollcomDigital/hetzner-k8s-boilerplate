@@ -1,8 +1,8 @@
-.PHONY: help setup plan apply deploy destroy kubeconfig \
+.PHONY: help setup plan apply deploy deploy-all destroy kubeconfig \
        ccm csi ingress cert-manager monitoring logging argocd security \
        external-secrets external-dns autoscaler upgrade-controller \
-       velero hubble upgrade \
-       fmt validate lint clean nodes pods status
+       velero hubble dex registry upgrade smoke-test \
+       grafana-ingress fmt validate lint clean nodes pods status docs
 
 SHELL := /bin/bash
 TERRAFORM_DIR := terraform
@@ -117,6 +117,22 @@ upgrade-controller: ## Deploy k3s System Upgrade Controller
 upgrade: ## Rolling k3s upgrade (usage: make upgrade VERSION=v1.30.2+k3s1)
 	@bash scripts/upgrade.sh $(VERSION)
 
+dex: ## Deploy Dex OIDC provider for SSO
+	@bash kubernetes/system/dex/install.sh
+
+registry: ## Deploy Harbor private container registry
+	@bash kubernetes/system/registry/install.sh
+
+# ============================================================================
+# Testing
+# ============================================================================
+
+smoke-test: ## Run end-to-end cluster health checks
+	@bash scripts/smoke-test.sh
+
+smoke-test-quick: ## Run infra-only checks (no app deploy)
+	@bash scripts/smoke-test.sh --skip-app
+
 # ============================================================================
 # Utilities
 # ============================================================================
@@ -165,3 +181,6 @@ clean: ## Remove local artifacts (kubeconfig, .terraform)
 	rm -f kubeconfig.yaml
 	rm -rf $(TERRAFORM_DIR)/.terraform
 	rm -f $(TERRAFORM_DIR)/.terraform.lock.hcl
+
+docs: ## Serve documentation locally (requires mkdocs-material)
+	mkdocs serve

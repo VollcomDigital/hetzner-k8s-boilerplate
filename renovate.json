@@ -1,0 +1,73 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "schedule:weekly",
+    ":semanticCommits"
+  ],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "platformAutomerge": false,
+  "packageRules": [
+    {
+      "description": "Terraform providers",
+      "matchManagers": ["terraform"],
+      "groupName": "terraform-providers",
+      "automerge": false
+    },
+    {
+      "description": "Helm chart versions in ArgoCD Application manifests",
+      "matchFileNames": ["kubernetes/gitops/argocd/apps/**"],
+      "enabled": true
+    },
+    {
+      "description": "Container image digests in Kubernetes manifests",
+      "matchManagers": ["kubernetes"],
+      "groupName": "kubernetes-images",
+      "automerge": false
+    },
+    {
+      "description": "GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "k3s version (manual review required)",
+      "matchPackageNames": ["k3s"],
+      "enabled": false
+    }
+  ],
+  "terraform": {
+    "enabled": true
+  },
+  "kubernetes": {
+    "fileMatch": ["kubernetes/.+\\.yaml$"]
+  },
+  "regexManagers": [
+    {
+      "description": "k3s version in tfvars and cloud-init",
+      "fileMatch": ["terraform/.+\\.tfvars$", "terraform/.+\\.tftpl$"],
+      "matchStrings": ["k3s_version\\s*=\\s*\"(?<currentValue>v[^\"]+)\""],
+      "depNameTemplate": "k3s-io/k3s",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "loose"
+    },
+    {
+      "description": "Cilium CLI version in cloud-init",
+      "fileMatch": ["terraform/cloud-init/.+\\.tftpl$"],
+      "matchStrings": ["CILIUM_CLI_VERSION=(?<currentValue>v[\\d.]+)"],
+      "depNameTemplate": "cilium/cilium-cli",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "description": "System Upgrade Controller version",
+      "fileMatch": ["kubernetes/system/upgrade-controller/install.sh"],
+      "matchStrings": ["SUC_VERSION=\"\\$\\{SUC_VERSION:-(?<currentValue>v[^}]+)\\}\""],
+      "depNameTemplate": "rancher/system-upgrade-controller",
+      "datasourceTemplate": "github-releases"
+    }
+  ]
+}

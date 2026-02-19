@@ -103,6 +103,7 @@ module "servers" {
   control_plane_server_type      = var.control_plane_server_type
   control_plane_image            = var.control_plane_image
   control_plane_firewall_id      = module.firewall.control_plane_firewall_id
+  control_plane_locations        = var.control_plane_locations
   cloud_init_control_plane_path  = "${path.module}/cloud-init/control-plane.yaml.tftpl"
 
   # Workers
