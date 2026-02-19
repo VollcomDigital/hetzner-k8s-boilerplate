@@ -1,0 +1,187 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Estimated Hetzner Cloud costs based on node types and resource usage",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 100 }
+            ]
+          },
+          "unit": "currencyEUR"
+        }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "auto"
+      },
+      "title": "Est. Monthly Server Cost",
+      "description": "Based on node count and type labels. Assumes cpx21=8.49, cpx31=15.49, cpx41=28.49, cpx51=54.49 EUR/mo.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(\n  (count by (node) (kube_node_info) * 0 + 1)\n  * on(node) group_left()\n  (\n    (label_replace(kube_node_labels{label_hcloud_server_type=\"cpx11\"}, \"cost\", \"4.49\", \"\", \"\") * 0 + 4.49)\n    or\n    (label_replace(kube_node_labels{label_hcloud_server_type=\"cpx21\"}, \"cost\", \"8.49\", \"\", \"\") * 0 + 8.49)\n    or\n    (label_replace(kube_node_labels{label_hcloud_server_type=\"cpx31\"}, \"cost\", \"15.49\", \"\", \"\") * 0 + 15.49)\n    or\n    (label_replace(kube_node_labels{label_hcloud_server_type=\"cpx41\"}, \"cost\", \"28.49\", \"\", \"\") * 0 + 28.49)\n    or\n    (label_replace(kube_node_labels{label_hcloud_server_type=\"cpx51\"}, \"cost\", \"54.49\", \"\", \"\") * 0 + 54.49)\n    or\n    (kube_node_info * 0 + 15.49)\n  )\n)",
+          "legendFormat": "Server Cost"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 30 }
+            ]
+          },
+          "unit": "currencyEUR"
+        }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "title": "Est. Monthly Volume Cost",
+      "description": "Hetzner Volumes: 0.052 EUR/GB/month",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(kube_persistentvolume_capacity_bytes) / 1024 / 1024 / 1024 * 0.052",
+          "legendFormat": "Volume Cost"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "blue", "value": null }
+            ]
+          },
+          "unit": "currencyEUR"
+        }
+      },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "title": "Est. Monthly LB Cost",
+      "description": "lb11 = 5.99 EUR/mo per LoadBalancer service",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "count(kube_service_spec_type{type=\"LoadBalancer\"}) * 5.99",
+          "legendFormat": "LB Cost"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
+      "id": 4,
+      "options": {},
+      "title": "Node Count by Role",
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "count by (label_node_role_kubernetes_io_control_plane) (kube_node_labels{label_node_role_kubernetes_io_control_plane=\"true\"})",
+          "legendFormat": "Control Plane"
+        },
+        {
+          "expr": "count(kube_node_labels) - count(kube_node_labels{label_node_role_kubernetes_io_control_plane=\"true\"})",
+          "legendFormat": "Worker"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes" }
+      },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 },
+      "id": 5,
+      "options": {},
+      "title": "Persistent Volume Capacity",
+      "type": "bargauge",
+      "targets": [
+        {
+          "expr": "sum by (persistentvolume) (kube_persistentvolume_capacity_bytes)",
+          "legendFormat": "{{ persistentvolume }}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "id": 6,
+      "title": "Cluster CPU Utilization vs Capacity",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(node_cpu_seconds_total{mode!=\"idle\"}[5m])) / sum(kube_node_status_allocatable{resource=\"cpu\"})",
+          "legendFormat": "CPU Used / Allocatable"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "id": 7,
+      "title": "Cluster Memory Utilization vs Capacity",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "1 - sum(node_memory_MemAvailable_bytes) / sum(kube_node_status_allocatable{resource=\"memory\"})",
+          "legendFormat": "Memory Used / Allocatable"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["hetzner", "cost", "capacity"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "title": "Hetzner Cloud - Cost & Capacity",
+  "uid": "hetzner-cost-capacity"
+}

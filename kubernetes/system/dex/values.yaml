@@ -1,0 +1,120 @@
+# Dex OIDC Provider Helm values
+# Ref: https://github.com/dexidp/helm-charts/tree/master/charts/dex
+#
+# Dex acts as an OIDC identity broker between external IdPs (GitHub, Google,
+# LDAP, SAML) and the Kubernetes API server, enabling SSO for kubectl.
+
+replicaCount: 2
+
+image:
+  tag: v2.39.1
+
+config:
+  issuer: https://dex.example.com  # Update with your domain
+
+  storage:
+    type: kubernetes
+    config:
+      inCluster: true
+
+  web:
+    http: 0.0.0.0:5556
+
+  # Configure ONE or more connectors below.
+  connectors:
+    # -- GitHub OAuth (recommended for teams) --
+    - type: github
+      id: github
+      name: GitHub
+      config:
+        clientID: "$GITHUB_CLIENT_ID"
+        clientSecret: "$GITHUB_CLIENT_SECRET"
+        redirectURI: https://dex.example.com/callback
+        orgs:
+          - name: YOUR_GITHUB_ORG  # Restrict to org members
+
+    # -- Google OIDC (uncomment to use) --
+    # - type: oidc
+    #   id: google
+    #   name: Google
+    #   config:
+    #     issuer: https://accounts.google.com
+    #     clientID: "$GOOGLE_CLIENT_ID"
+    #     clientSecret: "$GOOGLE_CLIENT_SECRET"
+    #     redirectURI: https://dex.example.com/callback
+
+    # -- LDAP (uncomment to use) --
+    # - type: ldap
+    #   id: ldap
+    #   name: LDAP
+    #   config:
+    #     host: ldap.example.com:636
+    #     insecureNoSSL: false
+    #     insecureSkipVerify: false
+    #     rootCA: /etc/dex/tls/ca.crt
+    #     bindDN: cn=admin,dc=example,dc=com
+    #     bindPW: "$LDAP_BIND_PASSWORD"
+    #     userSearch:
+    #       baseDN: ou=users,dc=example,dc=com
+    #       filter: "(objectClass=person)"
+    #       username: uid
+    #       idAttr: uid
+    #       emailAttr: mail
+    #       nameAttr: cn
+    #     groupSearch:
+    #       baseDN: ou=groups,dc=example,dc=com
+    #       filter: "(objectClass=groupOfNames)"
+    #       userMatchers:
+    #         - userAttr: DN
+    #           groupAttr: member
+    #       nameAttr: cn
+
+  # Static clients (kubectl + ArgoCD)
+  staticClients:
+    - id: kubernetes
+      name: Kubernetes
+      redirectURIs:
+        - http://localhost:8000  # kubelogin callback
+        - http://localhost:18000
+      secret: "$DEX_KUBERNETES_CLIENT_SECRET"
+
+    - id: argocd
+      name: ArgoCD
+      redirectURIs:
+        - https://argocd.example.com/auth/callback  # Update domain
+      secret: "$DEX_ARGOCD_CLIENT_SECRET"
+
+  enablePasswordDB: false
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+service:
+  type: ClusterIP
+  ports:
+    http:
+      port: 5556
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: dex.example.com  # Update with your domain
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: dex-tls
+      hosts:
+        - dex.example.com  # Update with your domain
+
+serviceMonitor:
+  enabled: true
+  namespace: monitoring

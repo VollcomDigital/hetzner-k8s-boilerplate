@@ -1,0 +1,33 @@
+# Promtail Helm values
+# Ref: https://github.com/grafana/helm-charts/tree/main/charts/promtail
+
+config:
+  clients:
+    - url: http://loki.logging.svc.cluster.local:3100/loki/api/v1/push
+      tenant_id: ""
+
+  snippets:
+    pipelineStages:
+      - cri: {}
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}'
+          max_wait_time: 3s
+      - labeldrop:
+          - filename
+          - stream
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+serviceMonitor:
+  enabled: true
+  namespace: monitoring

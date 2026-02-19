@@ -1,0 +1,143 @@
+name: Deploy Application
+
+# Example CI/CD pipeline for deploying an application to the cluster.
+# Customize the build steps, image registry, and ArgoCD app name for your project.
+#
+# Required secrets (set in GitHub repo settings):
+#   REGISTRY_URL       - Container registry URL (e.g., ghcr.io/your-org)
+#   REGISTRY_USERNAME  - Registry login username
+#   REGISTRY_PASSWORD  - Registry login password/token
+#   ARGOCD_SERVER      - ArgoCD server URL (e.g., argocd.example.com)
+#   ARGOCD_AUTH_TOKEN  - ArgoCD API token
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  APP_NAME: my-app
+  IMAGE_NAME: ${{ secrets.REGISTRY_URL }}/${{ github.event.repository.name }}
+
+jobs:
+  build:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.REGISTRY_URL }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'staging'
+    environment: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x argocd
+          sudo mv argocd /usr/local/bin/
+
+      - name: Update image tag in ArgoCD
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          argocd app set ${{ env.APP_NAME }}-staging \
+            --grpc-web \
+            --parameter image.tag=${{ needs.build.outputs.image_tag }}
+
+          argocd app sync ${{ env.APP_NAME }}-staging \
+            --grpc-web \
+            --force \
+            --prune
+
+          argocd app wait ${{ env.APP_NAME }}-staging \
+            --grpc-web \
+            --timeout 300
+
+  deploy-production:
+    name: Deploy to Production
+    needs: [build, deploy-staging]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.environment == 'production'
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x argocd
+          sudo mv argocd /usr/local/bin/
+
+      - name: Update image tag in ArgoCD
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
+          argocd app set ${{ env.APP_NAME }}-production \
+            --grpc-web \
+            --parameter image.tag=${{ needs.build.outputs.image_tag }}
+
+          argocd app sync ${{ env.APP_NAME }}-production \
+            --grpc-web \
+            --force \
+            --prune
+
+          argocd app wait ${{ env.APP_NAME }}-production \
+            --grpc-web \
+            --timeout 300

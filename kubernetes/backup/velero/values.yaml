@@ -1,0 +1,77 @@
+# Velero Helm values
+# Ref: https://github.com/vmware-tanzu/helm-charts/tree/main/charts/velero
+
+initContainers:
+  - name: velero-plugin-for-aws
+    image: velero/velero-plugin-for-aws:v1.10.0
+    imagePullPolicy: IfNotPresent
+    volumeMounts:
+      - mountPath: /target
+        name: plugins
+
+configuration:
+  backupStorageLocation:
+    - name: default
+      provider: aws
+      bucket: velero-backups          # Update with your bucket name
+      config:
+        region: eu-central-1          # S3-compatible region
+        s3ForcePathStyle: "true"
+        s3Url: ""                     # Set to your S3-compatible endpoint (e.g., MinIO URL)
+
+  volumeSnapshotLocation:
+    - name: default
+      provider: aws
+      config:
+        region: eu-central-1
+
+  defaultBackupStorageLocation: default
+  defaultVolumeSnapshotLocations: aws:default
+
+credentials:
+  useSecret: true
+  name: velero-credentials
+  secretContents:
+    cloud: |
+      [default]
+      aws_access_key_id=YOUR_ACCESS_KEY
+      aws_secret_access_key=YOUR_SECRET_KEY
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+
+schedules:
+  daily-full:
+    disabled: false
+    schedule: "0 2 * * *"
+    useOwnerReferencesInBackup: false
+    template:
+      ttl: "720h"  # 30 days retention
+      includedNamespaces:
+        - "*"
+      excludedNamespaces:
+        - velero
+      snapshotVolumes: true
+      storageLocation: default
+
+  hourly-critical:
+    disabled: false
+    schedule: "0 * * * *"
+    useOwnerReferencesInBackup: false
+    template:
+      ttl: "168h"  # 7 days retention
+      includedNamespaces:
+        - production
+        - argocd
+      snapshotVolumes: false
+      storageLocation: default

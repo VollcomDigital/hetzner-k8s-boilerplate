@@ -1,0 +1,55 @@
+# =============================================================================
+# Remote State Backend — S3-compatible storage
+# =============================================================================
+# Copy this file to backend.tf and configure for your environment.
+#
+# Options:
+#   1. AWS S3 (if you have an AWS account)
+#   2. MinIO (self-hosted S3-compatible, can run on Hetzner)
+#   3. Any S3-compatible provider (Wasabi, Backblaze B2, etc.)
+#
+# After configuring, run: terraform init -migrate-state
+# =============================================================================
+
+# -- Option 1: AWS S3 --
+# terraform {
+#   backend "s3" {
+#     bucket         = "your-terraform-state"
+#     key            = "hetzner-k8s/terraform.tfstate"
+#     region         = "eu-central-1"
+#     encrypt        = true
+#     dynamodb_table = "terraform-locks"  # For state locking
+#   }
+# }
+
+# -- Option 2: MinIO (S3-compatible, self-hosted) --
+# terraform {
+#   backend "s3" {
+#     bucket = "terraform-state"
+#     key    = "hetzner-k8s/terraform.tfstate"
+#     region = "main"
+#
+#     endpoints = {
+#       s3 = "https://minio.example.com"
+#     }
+#
+#     access_key = "minioadmin"
+#     secret_key = "minioadmin"
+#
+#     skip_credentials_validation = true
+#     skip_metadata_api_check     = true
+#     skip_region_validation      = true
+#     skip_requesting_account_id  = true
+#     use_path_style              = true
+#   }
+# }
+
+# -- Option 3: Terraform Cloud --
+# terraform {
+#   cloud {
+#     organization = "your-org"
+#     workspaces {
+#       name = "hetzner-k8s"
+#     }
+#   }
+# }

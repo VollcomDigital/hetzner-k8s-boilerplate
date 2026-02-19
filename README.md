@@ -1,209 +1,432 @@
-# Hetzner Kubernetes Boilerplate (Production-Ready Plan)
+# Hetzner Kubernetes Boilerplate
 
-This repository will become a reusable, industry-standard boilerplate to deploy and operate a Kubernetes cluster on Hetzner Cloud with strong defaults for security, reliability, and repeatability.
+Production-ready Kubernetes cluster on [Hetzner Cloud](https://www.hetzner.com/cloud) using **Terraform** and **k3s**, following industry best practices.
 
-## 1) Goal
+## Architecture
 
-Build a template that enables teams to:
-
-- Provision infrastructure using Infrastructure as Code (IaC)
-- Bootstrap a highly available Kubernetes control plane
-- Manage cluster add-ons and workloads via GitOps
-- Enforce security and policy guardrails by default
-- Operate the platform with observability, backups, and recovery runbooks
-
-## 2) Architecture Decisions (Recommended Baseline)
-
-### Core Stack
-
-- **Infrastructure provisioning:** Terraform (`hcloud` + DNS + firewall + network resources)
-- **Kubernetes OS/Bootstrap:** Talos Linux + `talosctl`
-- **CNI / Networking:** Cilium (network policy + eBPF data plane)
-- **Cloud integration:** Hetzner Cloud Controller Manager + Hetzner CSI
-- **Ingress:** NGINX Ingress Controller (or Traefik if preferred)
-- **TLS:** cert-manager + Let's Encrypt
-- **DNS automation:** external-dns (Hetzner DNS)
-- **GitOps:** FluxCD (preferred for lightweight bootstrap)
-- **Secrets in Git:** SOPS + age
-- **Policy engine:** Kyverno (or Gatekeeper)
-- **Observability:** kube-prometheus-stack + Loki
-- **Backup/restore:** Velero (cluster objects + PV backup target in S3-compatible object storage)
-
-### Cluster Topology
-
-- **Control plane:** 3 nodes (same network zone, separate hosts)
-- **Worker nodes:** 3+ nodes (autoscaling-ready pattern for future)
-- **Private network:** all node-to-node traffic private
-- **Public entrypoints:** only ingress load balancer and tightly controlled API access
-- **API endpoint:** fronted by Hetzner load balancer and protected via firewall allowlist/VPN
-
-## 3) Repository Blueprint
-
-```text
-.
-├── terraform/
-│   ├── modules/
-│   │   ├── network/
-│   │   ├── firewall/
-│   │   ├── servers/
-│   │   ├── loadbalancer/
-│   │   └── dns/
-│   └── envs/
-│       ├── dev/
-│       └── prod/
-├── talos/
-│   ├── patches/
-│   ├── generated/              # gitignored
-│   └── scripts/
-├── kubernetes/
-│   ├── bootstrap/              # flux bootstrap manifests
-│   ├── clusters/
-│   │   ├── dev/
-│   │   └── prod/
-│   ├── infrastructure/         # ingress, cert-manager, cilium, csi, ccm
-│   └── apps/
-├── policies/                   # kyverno constraints and baselines
-├── scripts/
-├── .github/workflows/
-├── Makefile
-└── README.md
+```
+                    ┌──────────────────────────────────┐
+                    │         Hetzner Cloud             │
+                    │                                    │
+                    │   ┌────────────────────────┐      │
+                    │   │   Load Balancer (LB11)  │      │
+    Internet ──────►│   │   :6443 (K8s API)       │      │
+                    │   │   :9345 (k3s supervisor) │      │
+                    │   └─────────┬──────────────┘      │
+                    │             │                       │
+                    │   ┌─────────┼──────────────────┐   │
+                    │   │  Private Network (10.0.0.0) │   │
+                    │   │         │                    │   │
+                    │   │  ┌──────┴──────┐            │   │
+                    │   │  │Control Plane│            │   │
+                    │   │  │  (3x cpx31) │            │   │
+                    │   │  │  k3s server │            │   │
+                    │   │  │  etcd       │            │   │
+                    │   │  └─────────────┘            │   │
+                    │   │                              │   │
+                    │   │  ┌─────────────┐            │   │
+                    │   │  │   Workers   │            │   │
+                    │   │  │  (3x cpx31) │            │   │
+                    │   │  │  k3s agent  │            │   │
+                    │   │  └─────────────┘            │   │
+                    │   │                              │   │
+                    │   └──────────────────────────────┘   │
+                    └──────────────────────────────────────┘
 ```
 
-## 4) Implementation Phases
+## Stack
 
-## Phase 0 - Foundations and Standards
+| Layer | Component | Purpose |
+|-------|-----------|---------|
+| **IaC** | Terraform | Infrastructure provisioning |
+| **K8s Distribution** | k3s | Lightweight, CNCF-certified Kubernetes |
+| **CNI** | Cilium | Networking, network policies, kube-proxy replacement |
+| **Cloud Integration** | hcloud-ccm | Node lifecycle, Hetzner LB provisioning |
+| **Storage** | hcloud-csi | Persistent volumes (Hetzner Volumes) |
+| **Ingress** | NGINX Ingress | HTTP/HTTPS traffic routing |
+| **TLS** | cert-manager | Automated Let's Encrypt certificates |
+| **Monitoring** | kube-prometheus-stack | Prometheus + Grafana + Alertmanager |
+| **Logging** | Loki + Promtail | Centralized log aggregation (Grafana-native) |
+| **Backup** | Velero + etcd snapshots | Cluster state backup & disaster recovery |
+| **Secrets** | External Secrets Operator | Sync secrets from Vault, AWS, etc. |
+| **DNS** | external-dns | Automatic DNS records from Ingress resources |
+| **Autoscaling** | Cluster Autoscaler | Dynamic worker node scaling |
+| **Upgrades** | System Upgrade Controller | Automated rolling k3s upgrades via CRDs |
+| **GitOps** | ArgoCD | Continuous deployment from Git |
+| **Encryption** | WireGuard (Cilium) | Pod-to-pod traffic encryption |
 
-**Deliverables**
+## Prerequisites
 
-- Branching and release strategy documented
-- `pre-commit` hooks and formatting/lint policy
-- Makefile task interface (`make init`, `make plan`, `make bootstrap`, `make verify`)
-- Secret handling baseline (`.env.example`, SOPS + age setup)
+- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
+- [kubectl](https://kubernetes.io/docs/tasks/tools/)
+- [Helm](https://helm.sh/docs/intro/install/) >= 3.x
+- [hcloud CLI](https://github.com/hetznercloud/cli) (optional, for debugging)
+- SSH key pair (`ssh-keygen -t ed25519`)
+- Hetzner Cloud API token ([console](https://console.hetzner.cloud) → Project → Security → API Tokens)
 
-**Exit criteria**
+## Quick Start
 
-- Every local and CI command is deterministic and documented
+### 1. Clone and configure
 
-## Phase 1 - Terraform Infrastructure
+```bash
+git clone https://github.com/YOUR_ORG/hetzner-k8s-boilerplate.git
+cd hetzner-k8s-boilerplate
 
-**Deliverables**
+cp .env.example .env
+cp terraform/terraform.tfvars.example terraform/terraform.tfvars
+```
 
-- Terraform modules for network, subnets, firewalls, servers, load balancers, DNS
-- Environment overlays (`dev`, `prod`) using shared modules
-- Remote state backend and lock strategy documented
-- Outputs for Talos bootstrap (IPs, node names, LB endpoint)
+Edit both files with your values (at minimum: `HCLOUD_TOKEN` and `ACME_EMAIL`).
 
-**Exit criteria**
+### 2. Run pre-flight checks
 
-- `terraform plan` and `terraform apply` produce a full cluster-ready substrate
+```bash
+make setup
+```
 
-## Phase 2 - Kubernetes Bootstrap (Talos)
+### 3. Preview infrastructure
 
-**Deliverables**
+```bash
+make plan
+```
 
-- Talos machine configs generated from Terraform outputs
-- Control plane bootstrap automation scripts
-- Kubeconfig retrieval and smoke checks
-- Node labels/taints conventions documented
+### 4. Deploy everything
 
-**Exit criteria**
+```bash
+# Core components only (infra + CCM + CSI + ingress + cert-manager + monitoring)
+make deploy
 
-- All control plane and worker nodes join successfully
-- `kubectl get nodes` shows healthy cluster
+# Core + all optional components
+make deploy-all
 
-## Phase 3 - Mandatory Platform Add-ons
+# Core + selected optional components
+./scripts/deploy.sh --logging --argocd --security
+```
 
-**Deliverables**
+Core pipeline (always runs):
+1. Provisions Hetzner infrastructure (network, firewalls, LB, servers)
+2. Bootstraps k3s HA cluster via cloud-init
+3. Installs Cilium CNI with WireGuard encryption
+4. Deploys Hetzner CCM and CSI driver
+5. Installs NGINX Ingress Controller
+6. Deploys cert-manager with Let's Encrypt
+7. Sets up Prometheus + Grafana monitoring
 
-- Hetzner CCM and CSI installed
-- Cilium deployed with baseline network policies
-- Ingress controller + cert-manager + external-dns installed
-- Default StorageClass and PVC test workload
+Optional flags: `--logging`, `--argocd`, `--security`, `--external-dns`, `--autoscaler`, `--velero`, `--external-secrets`, or `--all`.
 
-**Exit criteria**
+### 5. Access the cluster
 
-- Public test app reachable over HTTPS with valid certificate
-- Dynamic volume provisioning works
+```bash
+export KUBECONFIG=./kubeconfig.yaml
+kubectl get nodes
+kubectl get pods -A
+```
 
-## Phase 4 - GitOps and Environment Promotion
+## Project Structure
 
-**Deliverables**
+```
+├── terraform/
+│   ├── main.tf                          # Root module — orchestrates everything
+│   ├── variables.tf                     # All configurable parameters
+│   ├── outputs.tf                       # Cluster endpoints and metadata
+│   ├── versions.tf                      # Provider versions and backend config
+│   ├── terraform.tfvars.example         # Example configuration
+│   ├── cloud-init/
+│   │   ├── control-plane.yaml.tftpl     # k3s server bootstrap
+│   │   └── worker.yaml.tftpl            # k3s agent bootstrap
+│   └── modules/
+│       ├── network/                     # Hetzner private network + subnet
+│       ├── firewall/                    # Ingress/egress rules per role
+│       └── server/                      # Control-plane + worker provisioning
+├── kubernetes/
+│   ├── core/
+│   │   ├── hcloud-ccm/                  # Hetzner Cloud Controller Manager
+│   │   └── hcloud-csi/                  # Hetzner CSI Driver + StorageClasses
+│   ├── ingress/
+│   │   ├── nginx/                       # NGINX Ingress (Helm values + install)
+│   │   └── cert-manager/               # cert-manager + Let's Encrypt issuers
+│   ├── monitoring/                      # kube-prometheus-stack (Helm values)
+│   ├── logging/                         # Loki + Promtail log aggregation
+│   ├── backup/                          # Velero cluster backup & restore
+│   ├── security/
+│   │   ├── network-policies/            # Default deny + allow rules
+│   │   ├── rbac/                        # ClusterRoles for reader/deployer
+│   │   ├── external-secrets/            # External Secrets Operator
+│   │   └── pod-security.yaml            # Pod Security Standards per namespace
+│   ├── system/
+│   │   ├── upgrade-controller/          # k3s System Upgrade Controller
+│   │   ├── external-dns/                # Automatic DNS record management
+│   │   └── autoscaler/                  # Hetzner node autoscaler
+│   ├── examples/
+│   │   └── sample-app.yaml             # Reference deployment with best practices
+│   └── gitops/
+│       └── argocd/                      # ArgoCD install + app-of-apps pattern
+├── scripts/
+│   ├── setup.sh                         # Pre-flight checks
+│   ├── deploy.sh                        # Full deployment pipeline (with optional flags)
+│   ├── destroy.sh                       # Teardown with confirmation
+│   └── upgrade.sh                       # Rolling k3s upgrade script
+├── .github/
+│   ├── workflows/validate.yml           # CI: terraform validate, kubeconform, trivy
+│   └── pull_request_template.md         # PR checklist template
+├── Makefile                             # 30+ targets across all categories
+├── .env.example                         # Environment variable template
+├── CONTRIBUTING.md                      # Development workflow & code standards
+├── LICENSE                              # MIT License
+└── .gitignore
+```
 
-- Flux bootstrap and source/reconciliation strategy
-- Folder conventions for `clusters/dev` and `clusters/prod`
-- Promotion flow (dev -> prod) via pull request policy
-- Drift detection and reconciliation alerting
+## Make Targets
 
-**Exit criteria**
+```
+Infrastructure:
+  make setup                Run pre-flight checks
+  make plan                 Preview Terraform changes
+  make apply                Apply Terraform changes
+  make deploy               Core deployment (infra + essential K8s components)
+  make deploy-all           Full deployment with ALL optional components
+  make destroy              Tear down everything (with confirmation)
 
-- Merging manifests to main branch reconciles cluster automatically
+Core Components:
+  make ccm                  Deploy Hetzner Cloud Controller Manager
+  make csi                  Deploy Hetzner CSI Driver
+  make ingress              Deploy NGINX Ingress Controller
+  make cert-manager         Deploy cert-manager
 
-## Phase 5 - Security Hardening and Compliance
+Observability:
+  make monitoring           Deploy Prometheus + Grafana monitoring stack
+  make logging              Deploy Loki + Promtail logging stack
+  make hubble               Deploy Hubble UI with Ingress + basic-auth
+  make grafana-ingress      Apply Grafana + Alertmanager Ingress manifests
 
-**Deliverables**
+Security:
+  make security             Apply network policies, RBAC, quotas, priority classes
+  make external-secrets     Deploy External Secrets Operator
 
-- Pod Security admission defaults and namespace policies
-- Kyverno policies (no latest tags, resource limits required, privileged constraints)
-- Image scanning in CI (Trivy)
-- RBAC least-privilege templates and break-glass procedure
+System & Operations:
+  make argocd               Deploy ArgoCD for GitOps
+  make velero               Deploy Velero backup system
+  make external-dns         Deploy external-dns
+  make autoscaler           Deploy Hetzner Cluster Autoscaler
+  make upgrade-controller   Deploy k3s System Upgrade Controller
+  make upgrade VERSION=v1.30.2+k3s1    Rolling k3s upgrade
 
-**Exit criteria**
+Utilities:
+  make kubeconfig           Fetch kubeconfig from cluster
+  make status               Cluster health overview (nodes, pods, PVs, backups)
+  make nodes                List nodes
+  make pods                 List all pods
+  make fmt                  Format Terraform files
+  make validate             Validate Terraform configuration
+  make lint                 Format + validate
+  make clean                Remove local artifacts
+```
 
-- Security baseline checks pass in CI and admission controls block non-compliant manifests
+## Configuration
 
-## Phase 6 - Observability, Backups, and Recovery
+### Server Types (Hetzner Cloud)
 
-**Deliverables**
+| Type | vCPU | RAM | Disk | Monthly Cost |
+|------|------|-----|------|-------------|
+| `cpx11` | 2 | 2 GB | 40 GB | ~€4.49 |
+| `cpx21` | 3 | 4 GB | 80 GB | ~€8.49 |
+| `cpx31` | 4 | 8 GB | 160 GB | ~€15.49 |
+| `cpx41` | 8 | 16 GB | 240 GB | ~€28.49 |
+| `cpx51` | 16 | 32 GB | 360 GB | ~€54.49 |
 
-- Metrics, logs, and alert routing configured
-- Velero backup schedules + restore playbooks
-- Etcd backup strategy and disaster recovery runbook
-- SLOs and alert threshold baselines
+Default cluster (3 CP + 3 Workers at `cpx31`): ~**€93/month** + LB (~€6) + Volumes.
 
-**Exit criteria**
+### Environment Profiles
 
-- Successful restore drill documented end-to-end
+Edit `terraform.tfvars` for your environment:
 
-## 5) CI/CD Quality Gates (Minimum)
+**Development** (single CP, minimal):
+```hcl
+control_plane_count       = 1
+control_plane_server_type = "cpx21"
+worker_count              = 2
+worker_server_type        = "cpx21"
+environment               = "dev"
+```
 
-Add GitHub Actions workflows for:
+**Production** (HA, full):
+```hcl
+control_plane_count       = 3
+control_plane_server_type = "cpx31"
+worker_count              = 3
+worker_server_type        = "cpx41"
+environment               = "production"
+```
 
-- Terraform `fmt`, `validate`, `plan`, `tflint`, `checkov`
-- Kubernetes manifest validation (`kubeconform`, `kube-linter`)
-- Helm linting (if charts are used)
-- YAML linting and policy tests
-- Optional integration smoke tests against a disposable test cluster
+## Security
 
-All pull requests must pass quality gates before merge.
+### Implemented
 
-## 6) Security and Reliability Defaults
+- **Network isolation**: Hetzner private network for all inter-node traffic
+- **Firewall rules**: Least-privilege per role (control-plane vs worker)
+- **WireGuard encryption**: Pod-to-pod traffic encrypted via Cilium
+- **Pod Security Standards**: Enforced per namespace (restricted/baseline)
+- **Network Policies**: Default-deny with explicit allow rules
+- **RBAC templates**: Read-only and deployer roles
+- **TLS everywhere**: cert-manager with automatic certificate rotation
+- **HSTS**: Enforced via NGINX Ingress
+- **Anonymous auth disabled**: On the API server
 
-- No direct SSH administration for routine operations (prefer Talos API + GitOps workflows)
-- API server access restricted via firewall/VPN/IP allowlist
-- Secrets encrypted at rest in Git with SOPS
-- Enforce `requests/limits`, anti-affinity for critical workloads, and PodDisruptionBudgets
-- Multi-AZ equivalent pattern is limited on Hetzner; prioritize same-zone low-latency control plane plus tested backups/restore
+- **Secret management**: External Secrets Operator syncs secrets from Vault, AWS SM, etc.
+- **Alertmanager routing**: Pre-built templates for Slack, PagerDuty, and email
 
-## 7) Definition of Done (Boilerplate v1)
+### Recommended Additions
 
-The boilerplate is ready when a new team can:
+- **Falco** for runtime threat detection
+- **OPA/Gatekeeper** for policy enforcement
+- **Dex** for OIDC authentication on the API server
+- Restrict `ssh_allowed_cidrs` and `api_allowed_cidrs` in firewalls
 
-1. Clone the repo, set environment variables/secrets, and run documented commands
-2. Provision infra with Terraform
-3. Bootstrap Kubernetes and core add-ons
-4. Deploy a sample app via GitOps with TLS and DNS
-5. Observe metrics/logs and trigger a backup + restore validation
-6. Pass all CI checks without manual exceptions
+## Logging
 
-## 8) Suggested First Iteration (1-2 weeks)
+Deploy the Loki + Promtail stack for centralized log aggregation:
 
-1. Scaffold repository structure + Makefile task interface
-2. Build Terraform modules for network/firewall/servers/LB
-3. Bootstrap Talos cluster and validate node lifecycle
-4. Install CCM/CSI/Cilium/Ingress/cert-manager
-5. Add Flux + one sample app with HTTPS endpoint
-6. Add CI checks for Terraform and manifest validation
+```bash
+make logging
+```
 
----
+Logs are automatically available in Grafana under the Loki datasource. Navigate to Explore and select Loki.
 
-If you want, the next step can be implementing this plan directly in this repository as a working scaffold (folders, Makefile, Terraform module stubs, and GitHub Actions) so you can start deploying immediately.
+Example LogQL queries:
+```
+{namespace="production"}
+{app="hello-world"} |= "error"
+rate({namespace="production"}[5m])
+```
+
+## Backup & Disaster Recovery
+
+### Velero (cluster state)
+
+```bash
+make velero
+```
+
+Pre-configured backup schedules:
+- **Daily full backup** at 02:00 UTC (30-day retention)
+- **Hourly critical namespaces** (production, argocd — 7-day retention)
+
+Manual operations:
+```bash
+velero backup create manual-backup --include-namespaces '*'
+velero backup get
+velero restore create --from-backup <backup-name>
+```
+
+### etcd Snapshots
+
+A CronJob in `kube-system` takes etcd snapshots every 6 hours:
+```bash
+kubectl apply -f kubernetes/backup/etcd-snapshot.yaml
+```
+
+## Monitoring
+
+After deployment, access Grafana:
+
+```bash
+kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80
+```
+
+Open [http://localhost:3000](http://localhost:3000) — default user `admin`.
+
+Pre-loaded dashboards:
+- Kubernetes cluster overview
+- Node exporter (system metrics)
+- NGINX Ingress Controller
+- cert-manager
+
+## GitOps with ArgoCD
+
+```bash
+make argocd
+```
+
+Access the ArgoCD UI:
+
+```bash
+kubectl port-forward -n argocd svc/argocd-server 8443:443
+```
+
+Open [https://localhost:8443](https://localhost:8443).
+
+Get the initial admin password:
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+```
+
+The `app-of-apps.yaml` template enables managing all cluster applications from a single Git repository.
+
+## Upgrading
+
+### k3s Version
+
+**Option 1: System Upgrade Controller (recommended)**
+
+```bash
+make upgrade-controller
+```
+
+Edit `kubernetes/system/upgrade-controller/upgrade-plan.yaml` with the target version, then:
+```bash
+kubectl apply -f kubernetes/system/upgrade-controller/upgrade-plan.yaml
+kubectl get plans -n system-upgrade  # monitor progress
+```
+
+The controller drains, upgrades, and uncordons nodes automatically — control plane first, then workers.
+
+**Option 2: Scripted rolling upgrade**
+
+```bash
+make upgrade VERSION=v1.31.0+k3s1
+```
+
+This runs `scripts/upgrade.sh` which drains/upgrades/uncordons each node sequentially with interactive confirmation.
+
+**Option 3: Manual**
+
+SSH into each node (control plane first, one at a time):
+```bash
+curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="v1.31.0+k3s1" sh -
+```
+
+### Helm Charts
+
+```bash
+helm repo update
+helm upgrade --install <release> <chart> --namespace <ns> --values <values.yaml>
+```
+
+## Troubleshooting
+
+### Nodes not joining
+
+```bash
+# Check cloud-init logs on the node
+ssh root@<NODE_IP> journalctl -u k3s
+ssh root@<NODE_IP> cat /var/log/cloud-init-output.log
+```
+
+### Cilium issues
+
+```bash
+kubectl -n kube-system exec -it ds/cilium -- cilium status
+kubectl -n kube-system exec -it ds/cilium -- cilium connectivity test
+```
+
+### Load Balancer not routing
+
+```bash
+hcloud load-balancer describe <LB_NAME>
+kubectl get svc -A | grep LoadBalancer
+```
+
+## License
+
+MIT

@@ -1,0 +1,48 @@
+# external-dns Helm values
+# Ref: https://github.com/kubernetes-sigs/external-dns/tree/master/charts/external-dns
+
+# Choose ONE provider and configure it. Uncomment the provider block you need.
+
+# -- Cloudflare --
+provider:
+  name: cloudflare
+
+env:
+  - name: CF_API_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: cloudflare-credentials
+        key: api-token
+
+# -- Hetzner DNS (uncomment to use instead of Cloudflare) --
+# provider:
+#   name: hetzner
+# env:
+#   - name: HETZNER_TOKEN
+#     valueFrom:
+#       secretKeyRef:
+#         name: hetzner-dns-credentials
+#         key: api-token
+
+policy: sync
+registry: txt
+txtOwnerId: k8s-cluster
+txtPrefix: _externaldns.
+
+sources:
+  - service
+  - ingress
+
+domainFilters:
+  - example.com  # Update with your domain(s)
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+serviceMonitor:
+  enabled: true
+  namespace: monitoring

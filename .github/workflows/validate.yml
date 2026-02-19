@@ -1,0 +1,90 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "kubernetes/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "kubernetes/**"
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.7"
+
+      - name: Terraform Format Check
+        working-directory: terraform
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: terraform
+        run: terraform validate
+
+  kubernetes:
+    name: Kubernetes Manifests Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          KUBECONFORM_VERSION="v0.6.6"
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar xz -C /usr/local/bin
+
+      - name: Validate Kubernetes manifests
+        run: |
+          find kubernetes -name '*.yaml' -not -name 'values.yaml' -not -name 'kustomization.yaml' \
+            -not -path '*/cert-manager/cluster-issuers.yaml' \
+            | xargs kubeconform \
+                -strict \
+                -ignore-missing-schemas \
+                -kubernetes-version 1.30.0 \
+                -summary
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy (Terraform)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: terraform
+          severity: HIGH,CRITICAL
+          exit-code: 0
+
+      - name: Run Trivy (Kubernetes)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: kubernetes
+          severity: HIGH,CRITICAL
+          exit-code: 0

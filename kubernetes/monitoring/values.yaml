@@ -1,0 +1,165 @@
+# kube-prometheus-stack Helm values
+# Ref: https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+
+# -- Global --
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: true
+    configReloaders: true
+    general: true
+    k8sContainerCpuUsageSecondsTotal: true
+    k8sContainerMemoryWorkingSetBytes: true
+    kubeApiserverAvailability: true
+    kubeApiserverBurnrate: true
+    kubeApiserverHistogram: true
+    kubeApiserverSlos: true
+    kubeControllerManager: true
+    kubelet: true
+    kubeProxy: false  # Disabled — using Cilium kube-proxy replacement
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeSchedulerAlerting: true
+    kubeSchedulerRecording: true
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
+
+# -- Prometheus --
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    retentionSize: "45GB"
+
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        memory: 2Gi
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: hcloud-volumes
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+
+    # Scrape all ServiceMonitors across namespaces
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+# -- Alertmanager --
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: hcloud-volumes
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+
+# -- Grafana --
+grafana:
+  adminPassword: ""  # Set via --set at install time or use existing secret
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+  persistence:
+    enabled: true
+    storageClassName: hcloud-volumes
+    size: 10Gi
+
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: ""
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+
+  dashboards:
+    default:
+      kubernetes-cluster:
+        gnetId: 7249
+        revision: 1
+        datasource: Prometheus
+      node-exporter:
+        gnetId: 1860
+        revision: 37
+        datasource: Prometheus
+      nginx-ingress:
+        gnetId: 14314
+        revision: 2
+        datasource: Prometheus
+      cert-manager:
+        gnetId: 11001
+        revision: 1
+        datasource: Prometheus
+
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+
+  ingress:
+    enabled: false  # Enable and configure in production
+
+# -- Node Exporter --
+nodeExporter:
+  enabled: true
+
+# -- kube-state-metrics --
+kubeStateMetrics:
+  enabled: true
+
+# -- Kube Controller Manager --
+kubeControllerManager:
+  enabled: true
+  endpoints:
+    - 10.0.0.2  # Update with actual control-plane private IPs
+
+# -- Kube Scheduler --
+kubeScheduler:
+  enabled: true
+  endpoints:
+    - 10.0.0.2  # Update with actual control-plane private IPs
+
+# -- Kube Etcd --
+kubeEtcd:
+  enabled: true
+
+# -- Kube Proxy (disabled — Cilium replaces it) --
+kubeProxy:
+  enabled: false
