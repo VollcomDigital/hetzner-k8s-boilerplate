@@ -159,11 +159,29 @@ resource "null_resource" "kubeconfig" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      echo "Waiting for k3s to initialize..."
-      sleep 60
-      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        -i ${var.ssh_private_key_path} \
-        root@${module.servers.control_plane_ips[0]} \
+      set -euo pipefail
+      SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5"
+      SSH_KEY="${var.ssh_private_key_path}"
+      SSH_HOST="root@${module.servers.control_plane_ips[0]}"
+      MAX_RETRIES=60
+      RETRY_INTERVAL=10
+
+      echo "Waiting for k3s to initialize on $SSH_HOST..."
+      for i in $(seq 1 $MAX_RETRIES); do
+        if ssh $SSH_OPTS -i "$SSH_KEY" "$SSH_HOST" \
+            'test -f /etc/rancher/k3s/k3s.yaml' 2>/dev/null; then
+          echo "k3s config found after $((i * RETRY_INTERVAL))s"
+          break
+        fi
+        if [ "$i" -eq "$MAX_RETRIES" ]; then
+          echo "ERROR: k3s did not produce kubeconfig within $((MAX_RETRIES * RETRY_INTERVAL))s"
+          exit 1
+        fi
+        echo "  Attempt $i/$MAX_RETRIES — retrying in ${RETRY_INTERVAL}s..."
+        sleep $RETRY_INTERVAL
+      done
+
+      ssh $SSH_OPTS -i "$SSH_KEY" "$SSH_HOST" \
         'cat /etc/rancher/k3s/k3s.yaml' \
         | sed 's|https://127.0.0.1:6443|https://${hcloud_load_balancer.api_pre.ipv4}:6443|g' \
         > ${path.module}/../kubeconfig.yaml
