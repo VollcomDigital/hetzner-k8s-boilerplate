@@ -6,7 +6,7 @@ NAMESPACE="velero"
 helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts
 helm repo update
 
-kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f kubernetes/backup/velero/namespace.yaml
 
 helm upgrade --install velero vmware-tanzu/velero \
   --namespace "$NAMESPACE" \

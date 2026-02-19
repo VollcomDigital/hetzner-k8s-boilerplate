@@ -6,7 +6,7 @@ NAMESPACE="ingress-nginx"
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo update
 
-kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f kubernetes/ingress/nginx/namespace.yaml
 
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
   --namespace "$NAMESPACE" \

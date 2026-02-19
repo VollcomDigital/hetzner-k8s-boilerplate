@@ -14,7 +14,7 @@ HARBOR_PASSWORD="${HARBOR_ADMIN_PASSWORD:-$(openssl rand -base64 16)}"
 helm repo add harbor https://helm.goharbor.io
 helm repo update
 
-kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f kubernetes/system/registry/namespace.yaml
 
 helm upgrade --install harbor harbor/harbor \
   --namespace "$NAMESPACE" \

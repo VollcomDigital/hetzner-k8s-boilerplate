@@ -6,7 +6,7 @@ NAMESPACE="logging"
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
-kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f kubernetes/logging/namespace.yaml
 
 echo "Deploying Loki..."
 helm upgrade --install loki grafana/loki \

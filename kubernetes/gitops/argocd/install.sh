@@ -6,7 +6,7 @@ NAMESPACE="argocd"
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo update
 
-kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f kubernetes/gitops/argocd/namespace.yaml
 
 helm upgrade --install argocd argo/argo-cd \
   --namespace "$NAMESPACE" \

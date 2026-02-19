@@ -6,7 +6,7 @@ NAMESPACE="external-secrets"
 helm repo add external-secrets https://charts.external-secrets.io
 helm repo update
 
-kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f kubernetes/security/external-secrets/namespace.yaml
 
 helm upgrade --install external-secrets external-secrets/external-secrets \
   --namespace "$NAMESPACE" \

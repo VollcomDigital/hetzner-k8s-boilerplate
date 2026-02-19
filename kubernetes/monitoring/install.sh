@@ -7,7 +7,7 @@ GRAFANA_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-$(openssl rand -base64 24)}"
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
-kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f kubernetes/monitoring/namespace.yaml
 
 helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace "$NAMESPACE" \

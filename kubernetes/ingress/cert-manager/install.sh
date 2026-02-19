@@ -7,7 +7,7 @@ ACME_EMAIL="${ACME_EMAIL:?ERROR: Set ACME_EMAIL environment variable}"
 helm repo add jetstack https://charts.jetstack.io
 helm repo update
 
-kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f kubernetes/ingress/cert-manager/namespace.yaml
 
 helm upgrade --install cert-manager jetstack/cert-manager \
   --namespace "$NAMESPACE" \

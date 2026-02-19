@@ -32,7 +32,7 @@ DEX_ARGOCD_SECRET="${DEX_ARGOCD_CLIENT_SECRET:-$(openssl rand -hex 16)}"
 helm repo add dex https://charts.dexidp.io
 helm repo update
 
-kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f kubernetes/system/dex/namespace.yaml
 
 # Create secrets for connectors
 kubectl create secret generic dex-connectors \

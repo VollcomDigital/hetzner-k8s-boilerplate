@@ -19,7 +19,7 @@ DNS_PROVIDER="${DNS_PROVIDER:-cloudflare}"
 helm repo add external-dns https://kubernetes-sigs.github.io/external-dns
 helm repo update
 
-kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f kubernetes/system/external-dns/namespace.yaml
 
 case "$DNS_PROVIDER" in
   cloudflare)
