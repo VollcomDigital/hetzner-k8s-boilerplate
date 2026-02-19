@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: etcd-snapshot
+  namespace: kube-system
+  labels:
+    app: etcd-snapshot
+spec:
+  schedule: "0 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            app: etcd-snapshot
+        spec:
+          hostNetwork: true
+          restartPolicy: OnFailure
+          nodeSelector:
+            node-role.kubernetes.io/control-plane: "true"
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+          containers:
+            - name: etcd-snapshot
+              image: rancher/k3s:v1.30.2-k3s1
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+                  SNAPSHOT_NAME="etcd-snapshot-${TIMESTAMP}"
+                  k3s etcd-snapshot save --name "$SNAPSHOT_NAME"
+                  echo "etcd snapshot saved: $SNAPSHOT_NAME"
+
+                  # Prune old snapshots (keep last 10)
+                  k3s etcd-snapshot ls 2>/dev/null | tail -n +2 | head -n -10 | \
+                    awk '{print $1}' | xargs -I{} k3s etcd-snapshot delete {} 2>/dev/null || true
+              securityContext:
+                privileged: true
+              volumeMounts:
+                - name: k3s-data
+                  mountPath: /var/lib/rancher/k3s
+                - name: etcd-certs
+                  mountPath: /var/lib/rancher/k3s/server/tls/etcd
+                  readOnly: true
+          volumes:
+            - name: k3s-data
+              hostPath:
+                path: /var/lib/rancher/k3s
+                type: Directory
+            - name: etcd-certs
+              hostPath:
+                path: /var/lib/rancher/k3s/server/tls/etcd
+                type: Directory

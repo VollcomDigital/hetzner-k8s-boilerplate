@@ -1,0 +1,52 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: system-cluster-critical
+description: >
+  Used for cluster-critical pods that must always run (e.g., CNI, CSI, CCM).
+  These pods cannot be preempted.
+value: 2000000000
+preemptionPolicy: Never
+globalDefault: false
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: system-node-critical
+description: >
+  Used for node-critical pods that must run on every node (e.g., Promtail, node-exporter).
+value: 1000000000
+preemptionPolicy: PreemptLowerPriority
+globalDefault: false
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+description: >
+  For important application workloads (e.g., API gateways, core services).
+  Can preempt lower-priority pods.
+value: 100000
+preemptionPolicy: PreemptLowerPriority
+globalDefault: false
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: default-priority
+description: >
+  Default priority for all application workloads.
+value: 0
+preemptionPolicy: PreemptLowerPriority
+globalDefault: true
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: low-priority
+description: >
+  For batch jobs, cron tasks, and non-critical workloads.
+  These pods are preempted first when resources are scarce.
+value: -1000
+preemptionPolicy: Never
+globalDefault: false

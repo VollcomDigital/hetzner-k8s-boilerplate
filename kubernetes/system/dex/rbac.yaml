@@ -1,0 +1,30 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-cluster-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  # Bind GitHub org teams or specific users to cluster-admin
+  # The "group" value comes from GitHub org membership via Dex
+  - kind: Group
+    name: "YOUR_GITHUB_ORG:platform-team"  # Update: org:team
+    apiGroup: rbac.authorization.k8s.io
+  # - kind: User
+  #   name: "user@example.com"
+  #   apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-cluster-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-reader
+subjects:
+  - kind: Group
+    name: "YOUR_GITHUB_ORG:developers"  # Update: org:team
+    apiGroup: rbac.authorization.k8s.io

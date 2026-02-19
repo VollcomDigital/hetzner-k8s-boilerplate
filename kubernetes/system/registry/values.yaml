@@ -1,0 +1,107 @@
+# Harbor Container Registry Helm values
+# Ref: https://github.com/goharbor/harbor-helm
+
+expose:
+  type: ingress
+  tls:
+    enabled: true
+    certSource: secret
+    secret:
+      secretName: harbor-tls
+  ingress:
+    hosts:
+      core: registry.example.com  # Update with your domain
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-production
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/proxy-body-size: "0"  # Unlimited for image push
+
+externalURL: https://registry.example.com  # Must match ingress host
+
+persistence:
+  enabled: true
+  persistentVolumeClaim:
+    registry:
+      storageClass: hcloud-volumes
+      size: 50Gi
+    database:
+      storageClass: hcloud-volumes
+      size: 5Gi
+    redis:
+      storageClass: hcloud-volumes
+      size: 1Gi
+    trivy:
+      storageClass: hcloud-volumes
+      size: 5Gi
+
+# Set via --set at install time or rotate afterward
+harborAdminPassword: ""
+
+database:
+  type: internal
+  internal:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+
+redis:
+  type: internal
+  internal:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+core:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+portal:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+registry:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+trivy:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+
+# Garbage collection
+gc:
+  enabled: true
+  schedule: "0 3 * * 0"  # Weekly on Sunday at 3am
+
+# Quota per project (10GB default)
+quota:
+  storagePerProject: 10737418240

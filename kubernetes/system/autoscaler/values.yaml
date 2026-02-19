@@ -1,0 +1,43 @@
+# Cluster Autoscaler Helm values for Hetzner Cloud
+# Ref: https://github.com/kubernetes/autoscaler/tree/master/cluster-autoscaler
+
+cloudProvider: hetzner
+
+autoscalingGroups:
+  - name: cpx31-worker-pool
+    minSize: 2
+    maxSize: 10
+
+autoDiscovery:
+  clusterName: k8s  # Must match var.cluster_name in terraform
+
+extraEnv:
+  HCLOUD_TOKEN:
+    secretKeyRef:
+      name: hcloud
+      key: token
+
+  # Node group definition: <min>:<max>:<server-type>:<location>:<name>
+  HCLOUD_CLOUD_INIT: ""  # Base64-encoded cloud-init (auto-populated by install script)
+  HCLOUD_IMAGE: "ubuntu-24.04"
+  HCLOUD_NETWORK: ""  # Set to your network name
+  HCLOUD_FIREWALL: ""  # Set to your worker firewall name
+  HCLOUD_SSH_KEY: ""   # Set to your SSH key name
+
+extraArgs:
+  scale-down-enabled: true
+  scale-down-delay-after-add: 10m
+  scale-down-unneeded-time: 5m
+  scale-down-utilization-threshold: "0.5"
+  skip-nodes-with-local-storage: false
+  skip-nodes-with-system-pods: true
+  balance-similar-node-groups: true
+  expendable-pods-priority-cutoff: -10
+  max-graceful-termination-sec: 600
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
