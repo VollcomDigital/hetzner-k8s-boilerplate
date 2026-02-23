@@ -3,14 +3,20 @@ set -euo pipefail
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
 info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
+error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 NAMESPACE="kube-system"
 HUBBLE_USER="${HUBBLE_USER:-admin}"
-HUBBLE_PASSWORD="${HUBBLE_PASSWORD:-$(openssl rand -base64 16)}"
+HUBBLE_PASSWORD="${HUBBLE_PASSWORD:-}"
+
+if [[ -z "$HUBBLE_PASSWORD" ]]; then
+  error "HUBBLE_PASSWORD is required. Export it before running this installer."
+fi
 
 info "Generating basic-auth secret for Hubble UI..."
 
@@ -37,7 +43,6 @@ info "Hubble UI Ingress deployed"
 echo "============================================="
 echo ""
 echo "  User:     $HUBBLE_USER"
-echo "  Password: $HUBBLE_PASSWORD"
 echo ""
 echo "  Update the host in kubernetes/core/hubble-ingress.yaml"
 echo "  then access: https://hubble.your-domain.com"
