@@ -99,27 +99,27 @@ module "servers" {
   network_cidr = var.network_cidr
 
   # Control Plane
-  control_plane_count            = var.control_plane_count
-  control_plane_server_type      = var.control_plane_server_type
-  control_plane_image            = var.control_plane_image
-  control_plane_firewall_id      = module.firewall.control_plane_firewall_id
-  control_plane_locations        = var.control_plane_locations
-  cloud_init_control_plane_path  = "${path.module}/cloud-init/control-plane.yaml.tftpl"
+  control_plane_count           = var.control_plane_count
+  control_plane_server_type     = var.control_plane_server_type
+  control_plane_image           = var.control_plane_image
+  control_plane_firewall_id     = module.firewall.control_plane_firewall_id
+  control_plane_locations       = var.control_plane_locations
+  cloud_init_control_plane_path = "${path.module}/cloud-init/control-plane.yaml.tftpl"
 
   # Workers
-  worker_count       = var.worker_count
-  worker_server_type = var.worker_server_type
-  worker_image       = var.worker_image
-  worker_firewall_id = module.firewall.worker_firewall_id
+  worker_count           = var.worker_count
+  worker_server_type     = var.worker_server_type
+  worker_image           = var.worker_image
+  worker_firewall_id     = module.firewall.worker_firewall_id
   cloud_init_worker_path = "${path.module}/cloud-init/worker.yaml.tftpl"
 
   # k3s
-  k3s_version     = var.k3s_version
-  k3s_token       = var.k3s_token
+  k3s_version      = var.k3s_version
+  k3s_token        = var.k3s_token
   api_server_lb_ip = hcloud_load_balancer.api_pre.ipv4
-  pod_cidr        = var.pod_cidr
-  service_cidr    = var.service_cidr
-  cluster_dns     = var.cluster_dns
+  pod_cidr         = var.pod_cidr
+  service_cidr     = var.service_cidr
+  cluster_dns      = var.cluster_dns
 
   # SSH
   ssh_public_key_path = var.ssh_public_key_path
@@ -177,7 +177,7 @@ resource "null_resource" "kubeconfig" {
           echo "ERROR: k3s did not produce kubeconfig within $((MAX_RETRIES * RETRY_INTERVAL))s"
           exit 1
         fi
-        echo "  Attempt $i/$MAX_RETRIES — retrying in ${RETRY_INTERVAL}s..."
+        echo "  Attempt $i/$MAX_RETRIES — retrying in $${RETRY_INTERVAL}s..."
         sleep $RETRY_INTERVAL
       done
 
