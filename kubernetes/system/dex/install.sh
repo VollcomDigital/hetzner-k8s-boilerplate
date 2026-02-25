@@ -15,14 +15,7 @@ DEX_DOMAIN="${DEX_DOMAIN:-dex.example.com}"
 
 # Validate required env vars for GitHub connector
 if [[ -z "${GITHUB_CLIENT_ID:-}" || -z "${GITHUB_CLIENT_SECRET:-}" ]]; then
-  warn "GITHUB_CLIENT_ID and/or GITHUB_CLIENT_SECRET not set."
-  warn "Dex will deploy but the GitHub connector will not work."
-  warn ""
-  warn "To configure GitHub OAuth:"
-  warn "  1. Go to https://github.com/settings/applications/new"
-  warn "  2. Set Homepage URL: https://$DEX_DOMAIN"
-  warn "  3. Set Callback URL: https://$DEX_DOMAIN/callback"
-  warn "  4. Export GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET"
+  error "GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET are required."
 fi
 
 # Generate client secrets if not provided
@@ -37,8 +30,8 @@ kubectl apply -f kubernetes/system/dex/namespace.yaml
 # Create secrets for connectors
 kubectl create secret generic dex-connectors \
   --namespace "$NAMESPACE" \
-  --from-literal=GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID:-placeholder}" \
-  --from-literal=GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:-placeholder}" \
+  --from-literal=GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID}" \
+  --from-literal=GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET}" \
   --from-literal=DEX_KUBERNETES_CLIENT_SECRET="$DEX_K8S_SECRET" \
   --from-literal=DEX_ARGOCD_CLIENT_SECRET="$DEX_ARGOCD_SECRET" \
   --dry-run=client -o yaml | kubectl apply -f -

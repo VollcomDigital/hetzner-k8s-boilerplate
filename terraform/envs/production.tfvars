@@ -15,16 +15,16 @@ environment  = "production"
 
 # HA control plane (3 nodes, spread placement group)
 control_plane_count       = 3
-control_plane_server_type = "cpx31"    # 4 vCPU, 8GB RAM
+control_plane_server_type = "cpx31" # 4 vCPU, 8GB RAM
 control_plane_image       = "ubuntu-24.04"
 
 # Production worker pool
 worker_count       = 3
-worker_server_type = "cpx41"           # 8 vCPU, 16GB RAM
+worker_server_type = "cpx41" # 8 vCPU, 16GB RAM
 worker_image       = "ubuntu-24.04"
 
 # Location
-location     = "fsn1"                  # Falkenstein (good connectivity)
+location     = "fsn1" # Falkenstein (good connectivity)
 network_zone = "eu-central"
 
 # Network

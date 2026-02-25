@@ -15,12 +15,12 @@ environment  = "dev"
 
 # Single control plane (no HA — acceptable for dev)
 control_plane_count       = 1
-control_plane_server_type = "cpx21"    # 3 vCPU, 4GB RAM
+control_plane_server_type = "cpx21" # 3 vCPU, 4GB RAM
 control_plane_image       = "ubuntu-24.04"
 
 # Minimal worker pool
 worker_count       = 2
-worker_server_type = "cpx21"           # 3 vCPU, 4GB RAM
+worker_server_type = "cpx21" # 3 vCPU, 4GB RAM
 worker_image       = "ubuntu-24.04"
 
 # Location

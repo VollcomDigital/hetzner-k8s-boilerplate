@@ -15,12 +15,12 @@ environment  = "staging"
 
 # HA control plane (matches production topology)
 control_plane_count       = 3
-control_plane_server_type = "cpx21"    # 3 vCPU, 4GB RAM (smaller than prod)
+control_plane_server_type = "cpx21" # 3 vCPU, 4GB RAM (smaller than prod)
 control_plane_image       = "ubuntu-24.04"
 
 # Staging worker pool
 worker_count       = 2
-worker_server_type = "cpx31"           # 4 vCPU, 8GB RAM
+worker_server_type = "cpx31" # 4 vCPU, 8GB RAM
 worker_image       = "ubuntu-24.04"
 
 # Location (same as production for realistic testing)
