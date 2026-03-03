@@ -18,6 +18,11 @@ output "worker_ips" {
   value       = module.servers.worker_ips
 }
 
+output "observability_ips" {
+  description = "Public IPs of observability nodes (run LGTM stack)"
+  value       = module.servers.observability_ips
+}
+
 output "kubeconfig_path" {
   description = "Path to the generated kubeconfig file"
   value       = abspath("${path.module}/../kubeconfig.yaml")

@@ -33,6 +33,16 @@ output "ssh_key_id" {
   value       = hcloud_ssh_key.cluster.id
 }
 
+output "observability_ips" {
+  description = "Public IPv4 addresses of observability nodes"
+  value       = hcloud_server.observability[*].ipv4_address
+}
+
+output "observability_ids" {
+  description = "Server IDs of observability nodes"
+  value       = hcloud_server.observability[*].id
+}
+
 output "k3s_token" {
   description = "k3s cluster join token"
   value       = local.k3s_token

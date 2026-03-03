@@ -198,6 +198,33 @@ variable "lb_type" {
 }
 
 # -----------------------------------------------------------------------------
+# Observability Nodes
+# -----------------------------------------------------------------------------
+
+variable "observability_node_count" {
+  description = "Number of dedicated observability nodes (0 = disabled, co-locate with workers)"
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.observability_node_count >= 0 && var.observability_node_count <= 10
+    error_message = "Observability node count must be between 0 and 10."
+  }
+}
+
+variable "observability_server_type" {
+  description = "Hetzner server type for observability nodes (recommend high-RAM: cx52, cpx51)"
+  type        = string
+  default     = "cx52"
+}
+
+variable "observability_image" {
+  description = "OS image for observability nodes"
+  type        = string
+  default     = "ubuntu-24.04"
+}
+
+# -----------------------------------------------------------------------------
 # Labels
 # -----------------------------------------------------------------------------
 

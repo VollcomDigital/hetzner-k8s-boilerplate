@@ -73,6 +73,29 @@ variable "cloud_init_worker_path" {
   type = string
 }
 
+# -- Observability Nodes --
+
+variable "observability_node_count" {
+  description = "Number of dedicated observability nodes (0 = disabled)"
+  type        = number
+  default     = 0
+}
+
+variable "observability_server_type" {
+  type    = string
+  default = "cx52"
+}
+
+variable "observability_image" {
+  type    = string
+  default = "ubuntu-24.04"
+}
+
+variable "cloud_init_observability_path" {
+  type    = string
+  default = ""
+}
+
 # -- k3s --
 
 variable "k3s_version" {

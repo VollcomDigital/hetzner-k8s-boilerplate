@@ -113,6 +113,12 @@ module "servers" {
   worker_firewall_id     = module.firewall.worker_firewall_id
   cloud_init_worker_path = "${path.module}/cloud-init/worker.yaml.tftpl"
 
+  # Observability Nodes (tainted: dedicated=observability:NoSchedule)
+  observability_node_count          = var.observability_node_count
+  observability_server_type         = var.observability_server_type
+  observability_image               = var.observability_image
+  cloud_init_observability_path     = "${path.module}/cloud-init/observability.yaml.tftpl"
+
   # k3s
   k3s_version      = var.k3s_version
   k3s_token        = var.k3s_token

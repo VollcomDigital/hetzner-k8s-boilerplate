@@ -139,3 +139,65 @@ resource "hcloud_server" "worker" {
     hcloud_server.control_plane
   ]
 }
+
+# ---------------------------------------------------------------------------
+# Observability Nodes
+# Tainted with dedicated=observability:NoSchedule at bootstrap so that only
+# the LGTM stack (Loki, Grafana, Tempo, Prometheus, MinIO) can schedule here.
+# ---------------------------------------------------------------------------
+
+resource "hcloud_placement_group" "observability" {
+  count = var.observability_node_count > 0 ? 1 : 0
+
+  name = "${var.cluster_name}-observability"
+  type = "spread"
+
+  labels = merge(local.common_labels, {
+    role = "observability"
+  })
+}
+
+resource "hcloud_server" "observability" {
+  count = var.observability_node_count
+
+  name        = "${var.cluster_name}-obs-${count.index}"
+  server_type = var.observability_server_type
+  image       = var.observability_image
+  location    = var.location
+
+  ssh_keys           = [hcloud_ssh_key.cluster.id]
+  placement_group_id = hcloud_placement_group.observability[0].id
+  firewall_ids       = [var.worker_firewall_id]
+
+  labels = merge(local.common_labels, {
+    role  = "observability"
+    index = tostring(count.index)
+  })
+
+  user_data = templatefile(var.cloud_init_observability_path, {
+    k3s_version   = var.k3s_version
+    k3s_token     = local.k3s_token
+    api_server_lb = var.api_server_lb_ip
+    node_name     = "${var.cluster_name}-obs-${count.index}"
+    cluster_name  = var.cluster_name
+    network_cidr  = var.network_cidr
+  })
+
+  network {
+    network_id = var.network_id
+  }
+
+  public_net {
+    ipv4_enabled = true
+    ipv6_enabled = true
+  }
+
+  lifecycle {
+    ignore_changes = [user_data, ssh_keys]
+  }
+
+  depends_on = [
+    var.subnet_id,
+    hcloud_server.control_plane
+  ]
+}
