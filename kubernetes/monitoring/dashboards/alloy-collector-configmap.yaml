@@ -1,0 +1,143 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-alloy-collector
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  alloy-collector.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "description": "Grafana Alloy Collector — DaemonSet health, pipeline throughput, and signal routing metrics",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "title": "Alloy Instances",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "count(up{job=~\".*alloy.*\"} == 1)"
+            }
+          ]
+        },
+        {
+          "title": "Traces Exported (rate)",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(otelcol_exporter_sent_spans_total{job=~\".*alloy.*\"}[5m]))"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "short" }
+          }
+        },
+        {
+          "title": "Metrics Exported (rate)",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(otelcol_exporter_sent_metric_points_total{job=~\".*alloy.*\"}[5m]))"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "short" }
+          }
+        },
+        {
+          "title": "Logs Exported (rate)",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(otelcol_exporter_sent_log_records_total{job=~\".*alloy.*\"}[5m]))"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "short" }
+          }
+        },
+        {
+          "title": "Alloy CPU Usage by Instance",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "rate(process_cpu_seconds_total{job=~\".*alloy.*\"}[5m])",
+              "legendFormat": "{{ instance }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": { "drawStyle": "line", "fillOpacity": 15 }
+            }
+          }
+        },
+        {
+          "title": "Alloy Memory Usage by Instance",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "process_resident_memory_bytes{job=~\".*alloy.*\"}",
+              "legendFormat": "{{ instance }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": { "drawStyle": "line", "fillOpacity": 15 }
+            }
+          }
+        },
+        {
+          "title": "Export Errors by Signal Type",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(otelcol_exporter_send_failed_spans_total{job=~\".*alloy.*\"}[5m]))",
+              "legendFormat": "traces (failed)"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(otelcol_exporter_send_failed_metric_points_total{job=~\".*alloy.*\"}[5m]))",
+              "legendFormat": "metrics (failed)"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(otelcol_exporter_send_failed_log_records_total{job=~\".*alloy.*\"}[5m]))",
+              "legendFormat": "logs (failed)"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["alloy", "collector", "opentelemetry", "pipeline"],
+      "time": { "from": "now-1h", "to": "now" },
+      "title": "Grafana Alloy — Collector Health",
+      "uid": "alloy-collector-health"
+    }

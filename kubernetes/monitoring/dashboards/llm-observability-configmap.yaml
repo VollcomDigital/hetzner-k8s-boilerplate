@@ -1,0 +1,255 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-llm-observability
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  llm-observability.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "description": "LLM Observability — Token usage, latency, cost, and model performance via OTel GenAI semantic conventions",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "title": "Total LLM Requests (Rate)",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(traces_spanmetrics_calls_total{gen_ai_system!=\"\"}[5m]))"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "thresholds": {
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 100 },
+                  { "color": "red", "value": 500 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "LLM Error Rate",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(traces_spanmetrics_calls_total{gen_ai_system!=\"\", status_code=\"STATUS_CODE_ERROR\"}[5m])) / sum(rate(traces_spanmetrics_calls_total{gen_ai_system!=\"\"}[5m])) * 100"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "thresholds": {
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 5 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "Avg Token Usage per Request",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "avg(gen_ai_client_token_usage_total{gen_ai_token_type=\"total\"})"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            }
+          }
+        },
+        {
+          "title": "P95 LLM Latency",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "histogram_quantile(0.95, sum(rate(traces_spanmetrics_latency_bucket{gen_ai_system!=\"\"}[5m])) by (le))"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms"
+            }
+          }
+        },
+        {
+          "title": "LLM Request Rate by Model",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(traces_spanmetrics_calls_total{gen_ai_request_model!=\"\"}[5m])) by (gen_ai_request_model, gen_ai_system)",
+              "legendFormat": "{{ gen_ai_system }}/{{ gen_ai_request_model }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": { "drawStyle": "line", "fillOpacity": 15 }
+            }
+          }
+        },
+        {
+          "title": "LLM Latency by Model (P95)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "histogram_quantile(0.95, sum(rate(traces_spanmetrics_latency_bucket{gen_ai_request_model!=\"\"}[5m])) by (le, gen_ai_request_model))",
+              "legendFormat": "{{ gen_ai_request_model }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "Token Usage by Model (Input vs Output)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(gen_ai_client_token_usage_total{gen_ai_token_type=\"input\"}[5m])) by (gen_ai_request_model)",
+              "legendFormat": "{{ gen_ai_request_model }} (input)"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(gen_ai_client_token_usage_total{gen_ai_token_type=\"output\"}[5m])) by (gen_ai_request_model)",
+              "legendFormat": "{{ gen_ai_request_model }} (output)"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": { "drawStyle": "line", "fillOpacity": 20, "stacking": { "mode": "normal" } }
+            }
+          }
+        },
+        {
+          "title": "Estimated Cost by Model ($/hr)",
+          "description": "Estimated hourly cost based on token pricing. Adjust cost_per_1k_tokens in the query for your model pricing.",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(gen_ai_client_token_usage_total{gen_ai_token_type=\"input\", gen_ai_request_model=~\"gpt-4.*\"}[1h])) * 0.03 / 1000 + sum(rate(gen_ai_client_token_usage_total{gen_ai_token_type=\"output\", gen_ai_request_model=~\"gpt-4.*\"}[1h])) * 0.06 / 1000",
+              "legendFormat": "GPT-4 family"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(gen_ai_client_token_usage_total{gen_ai_token_type=\"input\", gen_ai_request_model=~\"gpt-3.5.*\"}[1h])) * 0.0005 / 1000 + sum(rate(gen_ai_client_token_usage_total{gen_ai_token_type=\"output\", gen_ai_request_model=~\"gpt-3.5.*\"}[1h])) * 0.0015 / 1000",
+              "legendFormat": "GPT-3.5 family"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(gen_ai_client_token_usage_total{gen_ai_token_type=\"input\", gen_ai_request_model=~\"claude.*\"}[1h])) * 0.015 / 1000 + sum(rate(gen_ai_client_token_usage_total{gen_ai_token_type=\"output\", gen_ai_request_model=~\"claude.*\"}[1h])) * 0.075 / 1000",
+              "legendFormat": "Claude family"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "custom": { "drawStyle": "line", "fillOpacity": 15 }
+            }
+          }
+        },
+        {
+          "title": "LLM Requests by Service (Kubernetes workload)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(traces_spanmetrics_calls_total{gen_ai_system!=\"\"}[5m])) by (service)",
+              "legendFormat": "{{ service }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": { "drawStyle": "bars", "fillOpacity": 50 }
+            }
+          }
+        },
+        {
+          "title": "LLM Error Breakdown",
+          "type": "piechart",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(increase(traces_spanmetrics_calls_total{gen_ai_system!=\"\", status_code=\"STATUS_CODE_ERROR\"}[1h])) by (gen_ai_request_model, service)",
+              "legendFormat": "{{ service }}/{{ gen_ai_request_model }}"
+            }
+          ]
+        },
+        {
+          "title": "Recent LLM Traces",
+          "description": "Click a trace ID to see the full LLM call trace including prompt and completion in Tempo.",
+          "type": "table",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
+          "targets": [
+            {
+              "datasource": { "type": "tempo", "uid": "tempo" },
+              "queryType": "traceql",
+              "query": "{ span.gen_ai.system != \"\" } | select(span.gen_ai.request.model, span.gen_ai.usage.total_tokens, resource.service.name)"
+            }
+          ]
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["llm", "genai", "opentelemetry", "cost"],
+      "templating": {
+        "list": [
+          {
+            "name": "model",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "query": "label_values(traces_spanmetrics_calls_total{gen_ai_request_model!=\"\"}, gen_ai_request_model)",
+            "multi": true,
+            "includeAll": true
+          },
+          {
+            "name": "service",
+            "type": "query",
+            "datasource": { "type": "prometheus", "uid": "prometheus" },
+            "query": "label_values(traces_spanmetrics_calls_total{gen_ai_system!=\"\"}, service)",
+            "multi": true,
+            "includeAll": true
+          }
+        ]
+      },
+      "time": { "from": "now-6h", "to": "now" },
+      "title": "LLM Observability",
+      "uid": "llm-observability"
+    }
