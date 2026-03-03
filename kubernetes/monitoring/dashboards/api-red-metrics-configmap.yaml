@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-api-red-metrics
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    grafana_folder: "APM & Tracing"
+  annotations:
+    grafana_folder: "APM & Tracing"
+data:
+  api-red-metrics.json: |-
+    # Dashboard JSON content is loaded at deploy time by the install script.
+    # Run: kubectl create configmap grafana-dashboard-api-red-metrics \
+    #        --from-file=api-red-metrics.json=kubernetes/monitoring/dashboards/api-red-metrics.json \
+    #        -n monitoring --dry-run=client -o yaml | kubectl apply -f -
