@@ -1,5 +1,12 @@
 # kube-prometheus-stack Helm values
 # Ref: https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+#
+# LGTM Stack Integration:
+#   Prometheus -> metrics backend
+#   Loki -> logs backend (logging namespace)
+#   Tempo -> traces backend (tracing namespace)
+#   Grafana -> visualization (this chart)
+#   Alloy -> universal OTel collector (collector namespace)
 
 # -- Global --
 defaultRules:
@@ -40,6 +47,13 @@ prometheus:
     retention: 15d
     retentionSize: "45GB"
 
+    # Enable remote write receiver for Alloy and Tempo metrics generator
+    enableRemoteWriteReceiver: true
+
+    # Enable exemplar storage for trace-to-metric correlation
+    enableFeatures:
+      - exemplar-storage
+
     resources:
       requests:
         cpu: 200m
@@ -61,6 +75,15 @@ prometheus:
     podMonitorSelectorNilUsesHelmValues: false
     ruleSelectorNilUsesHelmValues: false
 
+    # Observability node isolation (uncomment when dedicated nodes are available)
+    # nodeSelector:
+    #   node-role.kubernetes.io/observability: "true"
+    # tolerations:
+    #   - key: role
+    #     operator: Equal
+    #     value: observability
+    #     effect: NoSchedule
+
 # -- Alertmanager --
 alertmanager:
   alertmanagerSpec:
@@ -79,6 +102,15 @@ alertmanager:
           resources:
             requests:
               storage: 5Gi
+
+    # Observability node isolation (uncomment when dedicated nodes are available)
+    # nodeSelector:
+    #   node-role.kubernetes.io/observability: "true"
+    # tolerations:
+    #   - key: role
+    #     operator: Equal
+    #     value: observability
+    #     effect: NoSchedule
 
 # -- Grafana --
 grafana:
@@ -109,6 +141,10 @@ grafana:
           options:
             path: /var/lib/grafana/dashboards/default
 
+  # Grafana feature toggles for tracing integration
+  env:
+    GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor tempoSearch tempoServiceGraph traceToMetrics correlations"
+
   dashboards:
     default:
       kubernetes-cluster:
@@ -132,9 +168,21 @@ grafana:
     dashboards:
       enabled: true
       searchNamespace: ALL
+    datasources:
+      enabled: true
+      searchNamespace: ALL
 
   ingress:
     enabled: false  # Enable and configure in production
+
+  # Observability node isolation (uncomment when dedicated nodes are available)
+  # nodeSelector:
+  #   node-role.kubernetes.io/observability: "true"
+  # tolerations:
+  #   - key: role
+  #     operator: Equal
+  #     value: observability
+  #     effect: NoSchedule
 
 # -- Node Exporter --
 nodeExporter:
