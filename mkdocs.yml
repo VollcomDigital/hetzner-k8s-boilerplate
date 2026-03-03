@@ -58,11 +58,14 @@ nav:
       - Overview: architecture/overview.md
       - Networking: architecture/networking.md
       - Security: architecture/security.md
+      - Observability: architecture/observability.md
   - Components:
       - Core: components/core.md
       - Ingress & TLS: components/ingress.md
       - Monitoring: components/monitoring.md
       - Logging: components/logging.md
+      - Tracing: components/tracing.md
+      - Alloy (OTel Collector): components/alloy.md
       - Backup: components/backup.md
       - GitOps: components/gitops.md
       - Authentication: components/authentication.md

@@ -46,7 +46,10 @@ Production-ready Kubernetes cluster on [Hetzner Cloud](https://www.hetzner.com/c
 | **Ingress** | NGINX Ingress | HTTP/HTTPS traffic routing |
 | **TLS** | cert-manager | Automated Let's Encrypt certificates |
 | **Monitoring** | kube-prometheus-stack | Prometheus + Grafana + Alertmanager |
-| **Logging** | Loki + Promtail | Centralized log aggregation (Grafana-native) |
+| **Logging** | Loki (SimpleScalable) + MinIO | Centralized log aggregation with S3 durability |
+| **Tracing** | Grafana Tempo (distributed) | Distributed tracing, TraceQL, Service Graph |
+| **OTel Collector** | Grafana Alloy | Universal OTel-native collector (replaces Promtail) |
+| **Object Storage** | MinIO | S3-compatible backend for Loki + Tempo |
 | **Backup** | Velero + etcd snapshots | Cluster state backup & disaster recovery |
 | **Secrets** | External Secrets Operator | Sync secrets from Vault, AWS, etc. |
 | **DNS** | external-dns | Automatic DNS records from Ingress resources |
@@ -193,9 +196,14 @@ Core Components:
   make ingress              Deploy NGINX Ingress Controller
   make cert-manager         Deploy cert-manager
 
-Observability:
-  make monitoring           Deploy Prometheus + Grafana monitoring stack
-  make logging              Deploy Loki + Promtail logging stack
+Observability (LGTM stack):
+  make monitoring           Deploy Prometheus + Grafana + Alertmanager
+  make minio-storage        Deploy MinIO (S3 backend for Loki + Tempo)
+  make logging              Deploy Loki (SimpleScalable) + Grafana Alloy
+  make tracing              Deploy Grafana Tempo (distributed tracing)
+  make alloy                Deploy Grafana Alloy OTel collector standalone
+  make dashboards           Load API RED Metrics + LLM Observability dashboards
+  make observability        Full LGTM stack (minio → logging → tracing → dashboards)
   make hubble               Deploy Hubble UI with Ingress + basic-auth
   make grafana-ingress      Apply Grafana + Alertmanager Ingress manifests
 

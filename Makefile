@@ -2,7 +2,8 @@
        ccm csi ingress cert-manager monitoring logging argocd security \
        external-secrets external-dns autoscaler upgrade-controller \
        velero hubble dex registry upgrade smoke-test \
-       grafana-ingress fmt validate lint clean nodes pods status docs
+       grafana-ingress fmt validate lint clean nodes pods status docs \
+       minio-storage tracing alloy dashboards observability
 
 SHELL := /bin/bash
 TERRAFORM_DIR := terraform
@@ -72,8 +73,24 @@ cert-manager: ## Deploy cert-manager with Let's Encrypt
 monitoring: ## Deploy Prometheus + Grafana monitoring stack
 	@bash kubernetes/monitoring/install.sh
 
-logging: ## Deploy Loki + Promtail logging stack
+logging: ## Deploy Loki (MinIO backend) + Grafana Alloy (OTel collector)
 	@bash kubernetes/logging/install.sh
+
+minio-storage: ## Deploy MinIO object storage (S3 backend for Loki + Tempo)
+	@bash kubernetes/storage/minio/install.sh
+
+tracing: ## Deploy Grafana Tempo distributed tracing backend
+	@bash kubernetes/tracing/install.sh
+
+alloy: ## Deploy Grafana Alloy OTel collector DaemonSet
+	@bash kubernetes/alloy/install.sh
+
+dashboards: ## Load custom Grafana dashboards (API RED metrics, LLM observability)
+	@bash kubernetes/monitoring/dashboards/install-dashboards.sh monitoring
+
+# observability: Full LGTM stack in dependency order
+# Run AFTER: ccm, csi, monitoring (prometheus+grafana must exist first)
+observability: minio-storage logging tracing alloy dashboards ## Deploy full LGTM observability stack (MinIO → Loki → Tempo → Alloy → Dashboards)
 
 hubble: ## Deploy Hubble UI with Ingress and basic-auth
 	@bash kubernetes/core/hubble-install.sh
