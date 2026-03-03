@@ -1,0 +1,62 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-collector-ingress
+  namespace: collector
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # OTLP from all application namespaces (any pod can send telemetry)
+    - ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    # Prometheus scraping from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: monitoring
+      ports:
+        - protocol: TCP
+          port: 12345
+  egress:
+    # DNS
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Traces to Tempo
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: tracing
+      ports:
+        - protocol: TCP
+          port: 4317
+    # Metrics to Prometheus
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090
+    # Logs to Loki
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: logging
+      ports:
+        - protocol: TCP
+          port: 3100
+    # Kubernetes API for service discovery
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443

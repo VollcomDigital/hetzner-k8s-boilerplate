@@ -1,0 +1,58 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tracing-ingress
+  namespace: tracing
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # OTLP from Alloy collector
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: collector
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    # gRPC from Grafana (query frontend)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: monitoring
+      ports:
+        - protocol: TCP
+          port: 3100
+        - protocol: TCP
+          port: 3200
+        - protocol: TCP
+          port: 9095
+    # Internal Tempo component communication
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: tracing
+  egress:
+    # DNS
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Remote write to Prometheus (metrics generator)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090
+    # Internal Tempo component communication
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: tracing
