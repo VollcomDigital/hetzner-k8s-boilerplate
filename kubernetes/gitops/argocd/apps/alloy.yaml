@@ -1,0 +1,115 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy
+  namespace: argocd
+  annotations:
+    # Deploy after Loki (wave 6) and Tempo (wave 5) so backends are ready
+    argocd.argoproj.io/sync-wave: "7"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: alloy
+    targetRevision: "*"
+    helm:
+      releaseName: alloy
+      values: |
+        alloy:
+          stabilityLevel: "generally-available"
+          extraEnv:
+            - name: TEMPO_OTLP_ENDPOINT
+              value: "tempo-distributor.tracing.svc.cluster.local:4317"
+            - name: PROMETHEUS_REMOTE_WRITE_URL
+              value: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+            - name: LOKI_PUSH_URL
+              value: "http://loki.logging.svc.cluster.local:3100/loki/api/v1/push"
+        controller:
+          type: daemonset
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+          volumes:
+            extra:
+              - name: varlogpods
+                hostPath:
+                  path: /var/log/pods
+              - name: varlibdockercontainers
+                hostPath:
+                  path: /var/lib/docker/containers
+          volumeMounts:
+            extra:
+              - name: varlogpods
+                mountPath: /var/log/pods
+                readOnly: true
+              - name: varlibdockercontainers
+                mountPath: /var/lib/docker/containers
+                readOnly: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        rbac:
+          create: true
+        serviceAccount:
+          create: true
+          name: alloy
+        clusterRole:
+          create: true
+          rules:
+            - apiGroups: [""]
+              resources: ["nodes", "nodes/proxy", "services", "endpoints", "pods", "namespaces"]
+              verbs: ["get", "list", "watch"]
+            - apiGroups: ["monitoring.coreos.com"]
+              resources: ["servicemonitors", "podmonitors"]
+              verbs: ["get", "list", "watch"]
+        service:
+          enabled: true
+          type: ClusterIP
+        extraPorts:
+          - name: otlp-grpc
+            port: 4317
+            targetPort: 4317
+            protocol: TCP
+          - name: otlp-http
+            port: 4318
+            targetPort: 4318
+            protocol: TCP
+        serviceMonitor:
+          enabled: true
+          namespace: monitoring
+          additionalLabels:
+            release: kube-prometheus-stack
+        securityContext:
+          privileged: false
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+            add: ["DAC_READ_SEARCH"]
+          readOnlyRootFilesystem: true
+          runAsNonRoot: false
+          runAsUser: 0
+        podLabels:
+          app.kubernetes.io/component: otel-collector
+          app.kubernetes.io/part-of: observability-stack
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

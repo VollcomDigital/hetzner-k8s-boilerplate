@@ -1,0 +1,145 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  annotations:
+    # Deploy after MinIO (wave 4) so the S3 backend is ready
+    argocd.argoproj.io/sync-wave: "5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: tempo-distributed
+    targetRevision: "*"
+    helm:
+      releaseName: tempo
+      values: |
+        storage:
+          trace:
+            backend: s3
+            s3:
+              bucket: tempo-traces
+              endpoint: minio.storage.svc.cluster.local:9000
+              # Credentials injected via ArgoCD ApplicationSet or ExternalSecret
+              access_key: ""
+              secret_key: ""
+              insecure: true
+              forcepathstyle: true
+        tempo:
+          structuredConfig:
+            compactor:
+              compaction:
+                block_retention: 720h
+            metrics_generator:
+              registry:
+                external_labels:
+                  source: tempo
+                  cluster: hetzner
+              storage:
+                path: /var/tempo/generator/wal
+                remote_write:
+                  - url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write
+                    send_exemplars: true
+              processor:
+                service_graphs:
+                  enable_virtual_node_label: true
+                span_metrics:
+                  dimensions:
+                    - http.method
+                    - http.route
+                    - http.status_code
+                    - gen_ai.system
+                    - gen_ai.request.model
+                    - gen_ai.operation.name
+            global_override:
+              metrics_generator_processors:
+                - service-graphs
+                - span-metrics
+                - local-blocks
+        distributor:
+          replicas: 2
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          nodeSelector:
+            dedicated: observability
+          config:
+            receivers:
+              otlp:
+                protocols:
+                  grpc:
+                    endpoint: 0.0.0.0:4317
+                  http:
+                    endpoint: 0.0.0.0:4318
+        ingester:
+          replicas: 2
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          nodeSelector:
+            dedicated: observability
+        querier:
+          replicas: 1
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          nodeSelector:
+            dedicated: observability
+        queryFrontend:
+          replicas: 1
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          nodeSelector:
+            dedicated: observability
+        compactor:
+          replicas: 1
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          nodeSelector:
+            dedicated: observability
+        metricsGenerator:
+          enabled: true
+          replicas: 1
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          nodeSelector:
+            dedicated: observability
+        serviceMonitor:
+          enabled: true
+          namespace: monitoring
+          additionalLabels:
+            release: kube-prometheus-stack
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tracing
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

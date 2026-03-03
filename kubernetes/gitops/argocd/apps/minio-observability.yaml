@@ -1,0 +1,80 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minio-observability
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.min.io/
+    chart: minio
+    targetRevision: "*"
+    helm:
+      releaseName: minio
+      values: |
+        mode: standalone
+        replicaCount: 1
+        # rootUser and rootPassword MUST be provided via ArgoCD ApplicationSet
+        # or an ExternalSecret. Never commit credentials here.
+        rootUser: ""
+        rootPassword: ""
+        persistence:
+          enabled: true
+          storageClass: hcloud-volumes
+          accessMode: ReadWriteOnce
+          size: 200Gi
+        buckets:
+          - name: loki-chunks
+            policy: none
+            purge: false
+          - name: loki-ruler
+            policy: none
+            purge: false
+          - name: loki-admin
+            policy: none
+            purge: false
+          - name: tempo-traces
+            policy: none
+            purge: false
+        tolerations:
+          - key: dedicated
+            operator: Equal
+            value: observability
+            effect: NoSchedule
+        nodeSelector:
+          dedicated: observability
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            memory: 2Gi
+        metrics:
+          serviceMonitor:
+            enabled: true
+            namespace: monitoring
+            additionalLabels:
+              release: kube-prometheus-stack
+        podLabels:
+          app.kubernetes.io/component: object-storage
+          app.kubernetes.io/part-of: observability-stack
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: storage
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,135 @@
+# Loki: upgraded to SimpleScalable mode with MinIO S3 backend.
+# Promtail is REMOVED — Grafana Alloy (see alloy.yaml) replaces it with
+# an OTel-native pipeline that handles both log collection and OTLP ingestion.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+  annotations:
+    # Deploy after MinIO (wave 4) so S3 buckets exist before Loki starts
+    argocd.argoproj.io/sync-wave: "6"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: "*"
+    helm:
+      releaseName: loki
+      values: |
+        deploymentMode: SimpleScalable
+        loki:
+          auth_enabled: false
+          commonConfig:
+            replication_factor: 2
+          storage:
+            type: s3
+            bucketNames:
+              chunks: loki-chunks
+              ruler: loki-ruler
+              admin: loki-admin
+            s3:
+              endpoint: http://minio.storage.svc.cluster.local:9000
+              region: us-east-1
+              # Credentials injected via ArgoCD ApplicationSet or ExternalSecret
+              secretAccessKey: ""
+              accessKeyId: ""
+              s3ForcePathStyle: true
+              insecure: true
+          schemaConfig:
+            configs:
+              - from: "2024-01-01"
+                store: tsdb
+                object_store: s3
+                schema: v13
+                index:
+                  prefix: index_
+                  period: 24h
+          limits_config:
+            retention_period: 720h
+            max_query_series: 10000
+            ingestion_rate_mb: 20
+            ingestion_burst_size_mb: 40
+          compactor:
+            retention_enabled: true
+        write:
+          replicas: 2
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          nodeSelector:
+            dedicated: observability
+          persistence:
+            enabled: true
+            storageClass: hcloud-volumes
+            size: 10Gi
+        read:
+          replicas: 2
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          nodeSelector:
+            dedicated: observability
+          persistence:
+            enabled: true
+            storageClass: hcloud-volumes
+            size: 5Gi
+        backend:
+          replicas: 1
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          nodeSelector:
+            dedicated: observability
+          persistence:
+            enabled: true
+            storageClass: hcloud-volumes
+            size: 5Gi
+        gateway:
+          enabled: true
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+          nodeSelector:
+            dedicated: observability
+        monitoring:
+          selfMonitoring:
+            enabled: false
+            grafanaAgent:
+              installOperator: false
+          lokiCanary:
+            enabled: false
+          serviceMonitor:
+            enabled: true
+            namespace: monitoring
+            additionalLabels:
+              release: kube-prometheus-stack
+        test:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
