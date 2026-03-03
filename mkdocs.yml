@@ -63,6 +63,9 @@ nav:
       - Ingress & TLS: components/ingress.md
       - Monitoring: components/monitoring.md
       - Logging: components/logging.md
+      - Tracing: components/tracing.md
+      - Collector: components/collector.md
+      - LLM Observability: components/llm-observability.md
       - Backup: components/backup.md
       - GitOps: components/gitops.md
       - Authentication: components/authentication.md

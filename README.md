@@ -45,8 +45,13 @@ Production-ready Kubernetes cluster on [Hetzner Cloud](https://www.hetzner.com/c
 | **Storage** | hcloud-csi | Persistent volumes (Hetzner Volumes) |
 | **Ingress** | NGINX Ingress | HTTP/HTTPS traffic routing |
 | **TLS** | cert-manager | Automated Let's Encrypt certificates |
-| **Monitoring** | kube-prometheus-stack | Prometheus + Grafana + Alertmanager |
-| **Logging** | Loki + Promtail | Centralized log aggregation (Grafana-native) |
+| **Metrics** | Prometheus (kube-prometheus-stack) | Time-series metrics, alerting |
+| **Visualization** | Grafana | Single pane of glass (dashboards, explore) |
+| **Logging** | Loki + Grafana Alloy | Centralized log aggregation (Grafana-native) |
+| **Tracing** | Grafana Tempo | Distributed tracing backend (OTLP) |
+| **Collector** | Grafana Alloy | Universal OTel-native collector (replaces Promtail) |
+| **APM** | OpenTelemetry Operator | Auto-instrumentation for Python/Node.js/Java/Go |
+| **LLM Observability** | OTel GenAI Conventions | Token usage, cost tracking, model latency |
 | **Backup** | Velero + etcd snapshots | Cluster state backup & disaster recovery |
 | **Secrets** | External Secrets Operator | Sync secrets from Vault, AWS, etc. |
 | **DNS** | external-dns | Automatic DNS records from Ingress resources |
@@ -112,7 +117,7 @@ Core pipeline (always runs):
 6. Deploys cert-manager with Let's Encrypt
 7. Sets up Prometheus + Grafana monitoring
 
-Optional flags: `--logging`, `--argocd`, `--security`, `--external-dns`, `--autoscaler`, `--velero`, `--external-secrets`, or `--all`.
+Optional flags: `--logging`, `--tracing`, `--collector`, `--otel-operator`, `--observability` (all 4), `--argocd`, `--security`, `--external-dns`, `--autoscaler`, `--velero`, `--external-secrets`, or `--all`.
 
 ### 5. Access the cluster
 
@@ -145,8 +150,12 @@ kubectl get pods -A
 │   ├── ingress/
 │   │   ├── nginx/                       # NGINX Ingress (Helm values + install)
 │   │   └── cert-manager/               # cert-manager + Let's Encrypt issuers
-│   ├── monitoring/                      # kube-prometheus-stack (Helm values)
+│   ├── monitoring/                      # kube-prometheus-stack + dashboards
+│   │   └── dashboards/                  # RED, LLM, Service Graph, Alloy dashboards
 │   ├── logging/                         # Loki + Promtail log aggregation
+│   ├── tracing/                         # Grafana Tempo (distributed tracing)
+│   ├── collector/                       # Grafana Alloy (universal OTel collector)
+│   ├── otel-operator/                   # OpenTelemetry Operator + Instrumentation CRDs
 │   ├── backup/                          # Velero cluster backup & restore
 │   ├── security/
 │   │   ├── network-policies/            # Default deny + allow rules
@@ -193,9 +202,14 @@ Core Components:
   make ingress              Deploy NGINX Ingress Controller
   make cert-manager         Deploy cert-manager
 
-Observability:
+Observability (LGTM Stack):
   make monitoring           Deploy Prometheus + Grafana monitoring stack
   make logging              Deploy Loki + Promtail logging stack
+  make tracing              Deploy Grafana Tempo distributed tracing
+  make collector            Deploy Grafana Alloy (universal OTel collector)
+  make otel-operator        Deploy OpenTelemetry Operator (auto-instrumentation)
+  make observability-full   Deploy full LGTM stack (all of the above + dashboards)
+  make observability-dashboards  Apply all observability Grafana dashboards
   make hubble               Deploy Hubble UI with Ingress + basic-auth
   make grafana-ingress      Apply Grafana + Alertmanager Ingress manifests
 
@@ -258,6 +272,19 @@ worker_server_type        = "cpx41"
 environment               = "production"
 ```
 
+**Production with Observability Isolation** (recommended):
+```hcl
+control_plane_count        = 3
+control_plane_server_type  = "cpx31"
+worker_count               = 3
+worker_server_type         = "cpx41"
+observability_node_count   = 2
+observability_server_type  = "cx41"   # High-RAM for Loki/Tempo/Prometheus
+environment                = "production"
+```
+
+Observability nodes are automatically tainted with `role=observability:NoSchedule` to prevent application pods from being scheduled on them, ensuring the LGTM stack has dedicated resources.
+
 ## Security
 
 ### Implemented
@@ -282,17 +309,51 @@ environment               = "production"
 - **Dex** for OIDC authentication on the API server
 - Restrict `ssh_allowed_cidrs` and `api_allowed_cidrs` in firewalls
 
-## Logging
+## Enterprise Observability (LGTM Stack)
 
-Deploy the Loki + Promtail stack for centralized log aggregation:
+Deploy the full open-source observability stack:
 
 ```bash
-make logging
+make observability-full
 ```
 
-Logs are automatically available in Grafana under the Loki datasource. Navigate to Explore and select Loki.
+This deploys:
 
-Example LogQL queries:
+| Component | Purpose |
+|-----------|---------|
+| **Prometheus** | Metrics storage (time-series) |
+| **Grafana** | Dashboards and visualization |
+| **Loki** | Log aggregation (30-day retention) |
+| **Tempo** | Distributed tracing (14-day retention) |
+| **Alloy** | Universal OTel collector (replaces Promtail) |
+| **OTel Operator** | Auto-instrumentation for Python/Node.js/Java/Go |
+
+### API Tracking (APM)
+
+Add a single annotation to your Deployment to enable auto-instrumentation:
+
+```yaml
+annotations:
+  instrumentation.opentelemetry.io/inject-python: "otel-system/default"
+```
+
+This automatically generates RED metrics (Rate, Errors, Duration) and distributed traces.
+
+### LLM Observability
+
+Track token usage, model latency, and estimated costs for OpenAI/Anthropic/HuggingFace calls using OTel GenAI Semantic Conventions. See `docs/components/llm-observability.md`.
+
+### Grafana Dashboards
+
+Pre-built dashboards included:
+- API Health (RED Metrics)
+- Service Graph (topology map)
+- LLM Observability (tokens, cost, latency)
+- Grafana Alloy (collector health)
+
+### Logging
+
+Logs are available in Grafana under the Loki datasource. Example LogQL queries:
 ```
 {namespace="production"}
 {app="hello-world"} |= "error"
@@ -340,6 +401,11 @@ Pre-loaded dashboards:
 - Node exporter (system metrics)
 - NGINX Ingress Controller
 - cert-manager
+- API Health — RED Metrics (Rate, Errors, Duration)
+- Service Graph — Topology Map
+- LLM Observability (token usage, cost, model latency)
+- Grafana Alloy — Collector Health
+- Hetzner Cost & Capacity
 
 ## GitOps with ArgoCD
 
