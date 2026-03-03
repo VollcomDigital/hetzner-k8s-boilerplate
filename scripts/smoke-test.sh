@@ -196,11 +196,50 @@ else
 fi
 
 # =========================================================================
-section "9. Optional Components"
+section "9. Observability Stack (LGTM)"
 # =========================================================================
 
-check_deployment "logging"          "loki"                       "Loki"         2>/dev/null || true
-check_daemonset  "logging"          "promtail"                   "Promtail"     2>/dev/null || true
+check_deployment "logging"          "loki"                       "Loki (Logs)"           2>/dev/null || true
+check_daemonset  "logging"          "promtail"                   "Promtail (Legacy)"     2>/dev/null || true
+
+# Tempo tracing components
+check_deployment "tracing"          "tempo-distributed-distributor" "Tempo Distributor"  2>/dev/null || true
+check_deployment "tracing"          "tempo-distributed-querier"     "Tempo Querier"      2>/dev/null || true
+check_deployment "tracing"          "tempo-distributed-query-frontend" "Tempo Query Frontend" 2>/dev/null || true
+check_deployment "tracing"          "tempo-distributed-compactor"   "Tempo Compactor"    2>/dev/null || true
+
+# Grafana Alloy collector
+check_daemonset  "collector"        "alloy"                      "Grafana Alloy (Collector)" 2>/dev/null || true
+
+# OpenTelemetry Operator
+check_deployment "otel-system"      "opentelemetry-operator-controller-manager" "OTel Operator" 2>/dev/null || true
+
+# Verify Tempo is accepting traces
+if kubectl get svc -n tracing tempo-distributed-distributor &>/dev/null; then
+  pass "Tempo distributor service exists (OTLP endpoint available)"
+else
+  warn "Tempo distributor service not found"
+fi
+
+# Verify Alloy OTLP ports
+if kubectl get svc -n collector alloy &>/dev/null; then
+  pass "Alloy collector service exists (OTLP receiver available)"
+else
+  warn "Alloy collector service not found"
+fi
+
+# Check OTel Instrumentation CRDs
+INSTR_COUNT=$(kubectl get instrumentations.opentelemetry.io -A --no-headers 2>/dev/null | wc -l)
+if [[ "$INSTR_COUNT" -gt 0 ]]; then
+  pass "OTel Instrumentation CRDs found: $INSTR_COUNT"
+else
+  warn "No OTel Instrumentation CRDs (auto-instrumentation not configured)"
+fi
+
+# =========================================================================
+section "10. Optional Components"
+# =========================================================================
+
 check_deployment "argocd"           "argocd-server"              "ArgoCD"       2>/dev/null || true
 check_deployment "external-secrets" "external-secrets"           "External Secrets Operator" 2>/dev/null || true
 check_deployment "velero"           "velero"                     "Velero"       2>/dev/null || true
@@ -208,7 +247,7 @@ check_deployment "external-dns"     "external-dns"               "external-dns" 
 
 # =========================================================================
 if [[ "$SKIP_APP" == false ]]; then
-section "10. App Deployment Test"
+section "11. App Deployment Test"
 # =========================================================================
 
   kubectl create namespace "$SMOKE_NS" --dry-run=client -o yaml | kubectl apply -f -

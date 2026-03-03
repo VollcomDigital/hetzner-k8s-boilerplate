@@ -1,8 +1,8 @@
 .PHONY: help setup plan apply deploy deploy-all destroy kubeconfig \
-       ccm csi ingress cert-manager monitoring logging argocd security \
-       external-secrets external-dns autoscaler upgrade-controller \
+       ccm csi ingress cert-manager monitoring logging tracing collector otel-operator \
+       argocd security external-secrets external-dns autoscaler upgrade-controller \
        velero hubble dex registry upgrade smoke-test \
-       grafana-ingress fmt validate lint clean nodes pods status docs
+       grafana-ingress observability-dashboards fmt validate lint clean nodes pods status docs
 
 SHELL := /bin/bash
 TERRAFORM_DIR := terraform
@@ -66,7 +66,7 @@ cert-manager: ## Deploy cert-manager with Let's Encrypt
 	@bash kubernetes/ingress/cert-manager/install.sh
 
 # ============================================================================
-# Observability
+# Observability (LGTM Stack)
 # ============================================================================
 
 monitoring: ## Deploy Prometheus + Grafana monitoring stack
@@ -74,6 +74,32 @@ monitoring: ## Deploy Prometheus + Grafana monitoring stack
 
 logging: ## Deploy Loki + Promtail logging stack
 	@bash kubernetes/logging/install.sh
+
+tracing: ## Deploy Grafana Tempo distributed tracing backend
+	@bash kubernetes/tracing/install.sh
+
+collector: ## Deploy Grafana Alloy (universal OTel collector, replaces Promtail)
+	@bash kubernetes/collector/install.sh
+
+otel-operator: ## Deploy OpenTelemetry Operator for auto-instrumentation
+	@bash kubernetes/otel-operator/install.sh
+
+observability-dashboards: ## Apply all observability Grafana dashboard ConfigMaps
+	kubectl apply -f kubernetes/monitoring/dashboards/red-metrics-configmap.yaml
+	kubectl apply -f kubernetes/monitoring/dashboards/llm-observability-configmap.yaml
+	kubectl apply -f kubernetes/monitoring/dashboards/service-graph-configmap.yaml
+	kubectl apply -f kubernetes/monitoring/dashboards/alloy-collector-configmap.yaml
+	kubectl apply -f kubernetes/tracing/grafana-datasource.yaml
+
+observability-full: ## Deploy full LGTM observability stack (Prometheus + Loki + Tempo + Alloy + OTel Operator + dashboards)
+	@echo "Deploying full LGTM observability stack..."
+	@$(MAKE) monitoring
+	@$(MAKE) logging
+	@$(MAKE) tracing
+	@$(MAKE) collector
+	@$(MAKE) otel-operator
+	@$(MAKE) observability-dashboards
+	@echo "Full observability stack deployed."
 
 hubble: ## Deploy Hubble UI with Ingress and basic-auth
 	@bash kubernetes/core/hubble-install.sh
