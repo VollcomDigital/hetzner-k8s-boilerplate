@@ -1,0 +1,232 @@
+# Grafana Alloy Helm values
+# Ref: https://github.com/grafana/alloy/tree/main/operations/helm/charts/alloy
+#
+# Alloy replaces Promtail as the universal OTel-native data collector.
+# Deployed as a DaemonSet: one per node, collecting logs, metrics, and traces.
+
+alloy:
+  configMap:
+    create: true
+    content: |
+      // ============================================================
+      // OTLP Receiver — accepts traces, metrics, logs from apps
+      // ============================================================
+      otelcol.receiver.otlp "default" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+        http {
+          endpoint = "0.0.0.0:4318"
+        }
+        output {
+          traces  = [otelcol.processor.batch.default.input]
+          metrics = [otelcol.processor.batch.default.input]
+          logs    = [otelcol.processor.batch.default.input]
+        }
+      }
+
+      // ============================================================
+      // Batch Processor — efficient batching before export
+      // ============================================================
+      otelcol.processor.batch "default" {
+        timeout = "5s"
+        send_batch_size = 1024
+        send_batch_max_size = 2048
+        output {
+          traces  = [otelcol.processor.attributes.default.input]
+          metrics = [otelcol.exporter.prometheus.default.input]
+          logs    = [otelcol.exporter.loki.default.input]
+        }
+      }
+
+      // ============================================================
+      // Attribute Processor — enrich traces with cluster metadata
+      // ============================================================
+      otelcol.processor.attributes "default" {
+        action {
+          key    = "k8s.cluster.name"
+          value  = "hetzner-k8s"
+          action = "upsert"
+        }
+        output {
+          traces = [otelcol.exporter.otlp.tempo.input]
+        }
+      }
+
+      // ============================================================
+      // Exporters — route signals to the correct backends
+      // ============================================================
+
+      // Traces -> Tempo
+      otelcol.exporter.otlp "tempo" {
+        client {
+          endpoint = "tempo-distributed-distributor.tracing.svc.cluster.local:4317"
+          tls {
+            insecure = true
+          }
+        }
+      }
+
+      // Metrics -> Prometheus (via remote write)
+      otelcol.exporter.prometheus "default" {
+        forward_to = [prometheus.remote_write.default.receiver]
+      }
+
+      prometheus.remote_write "default" {
+        endpoint {
+          url = "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+        }
+      }
+
+      // Logs -> Loki
+      otelcol.exporter.loki "default" {
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.logging.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }
+
+      // ============================================================
+      // Kubernetes Log Discovery (replaces Promtail)
+      // ============================================================
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      discovery.relabel "pod_logs" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app"]
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "app_name"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_node_name"]
+          target_label  = "node"
+        }
+      }
+
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pod_logs.output
+        forward_to = [loki.process.default.receiver]
+      }
+
+      loki.process "default" {
+        stage.cri {}
+
+        stage.multiline {
+          firstline = "^\\d{4}-\\d{2}-\\d{2}"
+          max_wait_time = "3s"
+        }
+
+        stage.label_drop {
+          values = ["filename", "stream"]
+        }
+
+        forward_to = [loki.write.default.receiver]
+      }
+
+      // ============================================================
+      // Prometheus Scraping — Kubernetes service discovery
+      // ============================================================
+      discovery.kubernetes "services" {
+        role = "service"
+      }
+
+      discovery.kubernetes "endpoints" {
+        role = "endpoints"
+      }
+
+      prometheus.scrape "kubernetes_pods" {
+        targets    = discovery.kubernetes.pods.targets
+        forward_to = [prometheus.remote_write.default.receiver]
+
+        scrape_interval = "30s"
+        scrape_timeout  = "10s"
+      }
+
+      // ============================================================
+      // Alloy self-monitoring
+      // ============================================================
+      prometheus.exporter.self "alloy" {}
+
+      prometheus.scrape "alloy_self" {
+        targets    = prometheus.exporter.self.alloy.targets
+        forward_to = [prometheus.remote_write.default.receiver]
+
+        scrape_interval = "30s"
+      }
+
+  clustering:
+    enabled: false
+
+  stabilityLevel: "generally-available"
+
+crds:
+  create: false
+
+# DaemonSet mode: one Alloy instance per node
+controller:
+  type: daemonset
+  nodeSelector: {}
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: role
+      operator: Equal
+      value: observability
+      effect: NoSchedule
+
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+# Alloy needs access to host log paths
+extraVolumes:
+  - name: varlog
+    hostPath:
+      path: /var/log
+  - name: dockercontainers
+    hostPath:
+      path: /var/lib/docker/containers
+  - name: k3slogs
+    hostPath:
+      path: /var/log/pods
+
+extraVolumeMounts:
+  - name: varlog
+    mountPath: /var/log
+    readOnly: true
+  - name: dockercontainers
+    mountPath: /var/lib/docker/containers
+    readOnly: true
+  - name: k3slogs
+    mountPath: /var/log/pods
+    readOnly: true
