@@ -1,0 +1,89 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: tempo-distributed
+    targetRevision: "*"
+    helm:
+      releaseName: tempo-distributed
+      values: |
+        tempo:
+          metricsGenerator:
+            enabled: true
+            remoteWriteUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+          multitenancyEnabled: false
+          retention: 336h
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: "0.0.0.0:4317"
+                http:
+                  endpoint: "0.0.0.0:4318"
+        metricsGenerator:
+          enabled: true
+          config:
+            storage:
+              remote_write:
+                - url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+                  send_exemplars: true
+            processor:
+              span_metrics:
+                dimensions:
+                  - service.name
+                  - http.method
+                  - http.status_code
+                  - http.route
+                  - gen_ai.request.model
+                  - gen_ai.system
+              service_graphs:
+                dimensions:
+                  - service.name
+        distributor:
+          replicas: 1
+        ingester:
+          replicas: 1
+          persistence:
+            enabled: true
+            storageClass: hcloud-volumes
+            size: 30Gi
+        querier:
+          replicas: 1
+        queryFrontend:
+          replicas: 1
+        compactor:
+          replicas: 1
+          config:
+            compaction:
+              block_retention: 336h
+        gateway:
+          enabled: true
+          replicas: 1
+        serviceMonitor:
+          enabled: true
+          namespace: monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tracing
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
