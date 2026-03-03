@@ -1,0 +1,41 @@
+# Network policy: MinIO object storage access
+# Only the LGTM backends (Loki, Tempo) and monitoring (MinIO metrics) may access it.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-lgtm-to-minio
+  namespace: storage
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: object-storage
+  policyTypes:
+    - Ingress
+  ingress:
+    # Loki (logging namespace) — chunk read/write
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+      ports:
+        - protocol: TCP
+          port: 9000
+
+    # Tempo (tracing namespace) — trace block read/write
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tracing
+      ports:
+        - protocol: TCP
+          port: 9000
+
+    # Prometheus scraping of MinIO metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9000

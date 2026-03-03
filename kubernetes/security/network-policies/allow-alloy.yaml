@@ -1,0 +1,98 @@
+# Network policy: allow Grafana Alloy DaemonSet egress
+# Alloy collects logs/traces/metrics from all nodes and ships them
+# to the LGTM backends.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-alloy-egress
+  namespace: logging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: otel-collector
+  policyTypes:
+    - Egress
+  egress:
+    # Ship traces to Tempo Distributor
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tracing
+      ports:
+        - protocol: TCP
+          port: 4317    # OTLP gRPC
+        - protocol: TCP
+          port: 4318    # OTLP HTTP
+
+    # Ship logs to Loki push API
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loki
+      ports:
+        - protocol: TCP
+          port: 3100
+
+    # Ship metrics to Prometheus remote_write
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Kubernetes API for pod/service discovery and k8sattributes processor
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              component: kube-apiserver
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+
+    # DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-alloy-otlp-ingress
+  namespace: logging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: otel-collector
+  policyTypes:
+    - Ingress
+  ingress:
+    # Accept OTLP from any application pod in the cluster
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 4317    # OTLP gRPC
+        - protocol: TCP
+          port: 4318    # OTLP HTTP
+    # Prometheus scraping of Alloy self-metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 12345   # Alloy metrics endpoint

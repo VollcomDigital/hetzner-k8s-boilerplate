@@ -1,0 +1,111 @@
+# Network policy: allow OTLP trace ingestion into the tracing namespace
+# Alloy DaemonSet (logging namespace) → Tempo Distributor (tracing namespace)
+# Apps (any namespace) → Alloy (logging namespace) → Tempo (tracing namespace)
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-otlp-ingestion
+  namespace: tracing
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+      app.kubernetes.io/component: distributor
+  policyTypes:
+    - Ingress
+  ingress:
+    # Accept OTLP gRPC (4317) and HTTP (4318) from the logging namespace (Alloy)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    # Accept traces directly from application namespaces (bypass Alloy path)
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/part-of
+                operator: DoesNotExist   # Any app pod without explicit exclusion
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tempo-internal
+  namespace: tracing
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow intra-namespace communication (distributor → ingester → querier, etc.)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+  egress:
+    # Allow intra-namespace communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+    # Allow writing to MinIO (object storage)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: storage
+      ports:
+        - protocol: TCP
+          port: 9000
+    # Allow remote_write to Prometheus (metrics generator)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090
+    # DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-grafana-query-tempo
+  namespace: tracing
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+      app.kubernetes.io/component: query-frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow Grafana to query traces via HTTP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 3100
