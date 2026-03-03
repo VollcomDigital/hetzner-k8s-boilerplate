@@ -1,0 +1,149 @@
+# Grafana Tempo Helm values (tempo-distributed chart)
+# Ref: https://github.com/grafana/helm-charts/tree/main/charts/tempo-distributed
+
+global:
+  clusterDomain: cluster.local
+
+tempo:
+  metricsGenerator:
+    enabled: true
+    remoteWriteUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+
+  multitenancyEnabled: false
+
+  retention: 336h  # 14 days
+
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+
+# Metrics generator produces RED metrics from traces (span metrics)
+metricsGenerator:
+  enabled: true
+  config:
+    storage:
+      remote_write:
+        - url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+          send_exemplars: true
+    registry:
+      external_labels:
+        source: tempo
+        cluster: hetzner-k8s
+    processor:
+      span_metrics:
+        dimensions:
+          - service.name
+          - http.method
+          - http.status_code
+          - http.route
+          - rpc.method
+          - rpc.service
+          - gen_ai.request.model
+          - gen_ai.system
+      service_graphs:
+        dimensions:
+          - service.name
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+distributor:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  config:
+    log_received_spans:
+      enabled: false
+
+ingester:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  persistence:
+    enabled: true
+    storageClass: hcloud-volumes
+    size: 30Gi
+  config:
+    max_block_duration: 30m
+
+querier:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+queryFrontend:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  query:
+    enabled: true
+    config: |
+      backend: "tempo-query-frontend-discovery:3200"
+
+compactor:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  config:
+    compaction:
+      block_retention: 336h
+
+gateway:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+# ServiceMonitor for Prometheus scraping
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
+
+# Observability node isolation (uncomment when dedicated nodes are available)
+# global:
+#   nodeSelector:
+#     node-role.kubernetes.io/observability: "true"
+#   tolerations:
+#     - key: role
+#       operator: Equal
+#       value: observability
+#       effect: NoSchedule

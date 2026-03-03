@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-service-graph
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  service-graph.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "description": "Service Graph — Real-time topology map from Tempo traces showing inter-service communication, latency, and error rates",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "title": "Service Topology Map",
+          "description": "Auto-generated from distributed traces. Nodes = services, edges = calls between services. Color = error rate.",
+          "type": "nodeGraph",
+          "gridPos": { "h": 16, "w": 24, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "queryType": "serviceMap"
+            }
+          ]
+        },
+        {
+          "title": "Inter-Service Request Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(traces_service_graph_request_total[5m])) by (client, server)",
+              "legendFormat": "{{ client }} -> {{ server }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        },
+        {
+          "title": "Inter-Service Error Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(traces_service_graph_request_failed_total[5m])) by (client, server) / sum(rate(traces_service_graph_request_total[5m])) by (client, server) * 100",
+              "legendFormat": "{{ client }} -> {{ server }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 1 },
+                  { "color": "red", "value": 5 }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "Inter-Service Latency (P95)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "histogram_quantile(0.95, sum(rate(traces_service_graph_request_server_seconds_bucket[5m])) by (le, client, server))",
+              "legendFormat": "{{ client }} -> {{ server }}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": { "drawStyle": "line", "fillOpacity": 10 }
+            }
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["service-graph", "topology", "opentelemetry", "apm"],
+      "time": { "from": "now-1h", "to": "now" },
+      "title": "Service Graph — Topology Map",
+      "uid": "service-graph-topology"
+    }
