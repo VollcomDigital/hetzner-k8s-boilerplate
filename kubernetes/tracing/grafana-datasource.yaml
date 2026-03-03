@@ -1,0 +1,58 @@
+# Grafana Tempo datasource — auto-discovered via Grafana sidecar
+# Label grafana_datasource: "1" triggers the sidecar to load this into Grafana.
+#
+# Configured with:
+#   - TraceQL query support
+#   - Service Map (reads traces_service_graph_* from Prometheus)
+#   - Trace-to-Logs correlation (links spans to Loki log streams)
+#   - Trace-to-Metrics correlation (links spans to Prometheus RED metrics)
+#   - Node Graph visualization (service dependency topology)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-tempo
+  namespace: tracing
+  labels:
+    grafana_datasource: "1"
+data:
+  tempo-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        url: http://tempo-query-frontend.tracing.svc.cluster.local:3100
+        access: proxy
+        isDefault: false
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: loki
+            spanStartTimeShift: "-1m"
+            spanEndTimeShift: "1m"
+            filterByTraceID: true
+            filterBySpanID: true
+            customQuery: false
+          tracesToMetrics:
+            datasourceUid: prometheus
+            spanStartTimeShift: "-2m"
+            spanEndTimeShift: "2m"
+            queries:
+              - name: Request rate
+                query: >
+                  sum(rate(traces_spanmetrics_calls_total{$$__tags}[5m]))
+              - name: Error rate
+                query: >
+                  sum(rate(traces_spanmetrics_calls_total{$$__tags,status_code="STATUS_CODE_ERROR"}[5m]))
+                    /
+                  sum(rate(traces_spanmetrics_calls_total{$$__tags}[5m]))
+              - name: P99 latency
+                query: >
+                  histogram_quantile(0.99, sum(rate(traces_spanmetrics_duration_milliseconds_bucket{$$__tags}[5m])) by (le))
+          serviceMap:
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+          search:
+            hide: false
+          lokiSearch:
+            datasourceUid: loki

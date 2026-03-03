@@ -1,0 +1,226 @@
+# Grafana Tempo Helm values — Distributed tracing backend
+# Chart: grafana/tempo-distributed
+# Ref: https://github.com/grafana/helm-charts/tree/main/charts/tempo-distributed
+#
+# Deployment mode: Microservices (distributor, ingester, querier, query-frontend, compactor)
+# Storage backend: MinIO (S3-compatible) via minio.storage.svc.cluster.local
+#
+# Capabilities enabled:
+#   - OTLP gRPC + HTTP ingestion (from Grafana Alloy)
+#   - Metrics Generator: span-metrics + service-graphs (feeds Prometheus for RED metrics)
+#   - TraceQL query engine
+#   - Service Graph (visualized in Grafana)
+
+# ----- Global storage config (MinIO S3-compatible) -----
+# Credentials injected at install time via --set flags.
+storage:
+  trace:
+    backend: s3
+    s3:
+      bucket: tempo-traces
+      endpoint: minio.storage.svc.cluster.local:9000
+      access_key: ""      # Set via --set storage.trace.s3.access_key=<value>
+      secret_key: ""      # Set via --set storage.trace.s3.secret_key=<value>
+      insecure: true
+      forcepathstyle: true
+
+# ----- Tempo configuration -----
+tempo:
+  structuredConfig:
+    # 30-day trace retention
+    compactor:
+      compaction:
+        block_retention: 720h
+
+    # Metrics Generator: converts traces into Prometheus metrics
+    # span-metrics  → traces_spanmetrics_* (RED metrics per service/route)
+    # service-graphs → traces_service_graph_* (dependency topology)
+    # local-blocks  → enables TraceQL metrics queries
+    metrics_generator:
+      registry:
+        external_labels:
+          source: tempo
+          cluster: hetzner
+      storage:
+        path: /var/tempo/generator/wal
+        remote_write:
+          # Sends generated metrics to Prometheus remote_write receiver
+          - url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write
+            send_exemplars: true
+      processor:
+        service_graphs:
+          # Include virtual node for external LLM API calls
+          enable_virtual_node_label: true
+        span_metrics:
+          histogram_buckets: [0.002, 0.004, 0.008, 0.016, 0.032, 0.064, 0.128, 0.256, 0.512, 1.024, 2.048, 4.096, 8.192]
+          # Dimensions from OTel HTTP + GenAI semantic conventions
+          dimensions:
+            - http.method
+            - http.route
+            - http.status_code
+            - gen_ai.system
+            - gen_ai.request.model
+            - gen_ai.operation.name
+    global_override:
+      metrics_generator_processors:
+        - service-graphs
+        - span-metrics
+        - local-blocks
+
+# ----- Ingestion rate limits -----
+global_override:
+  ingestion_rate_limit_bytes: 20000000   # 20 MB/s per tenant
+  max_bytes_per_trace: 50000000          # 50 MB max trace size
+  max_search_bytes_per_trace: 10000000   # 10 MB max searchable size
+
+# ----- Distributor (receives traces from Alloy) -----
+distributor:
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: observability
+      effect: NoSchedule
+
+  nodeSelector:
+    dedicated: observability
+
+  # Enable all OTel ingestion protocols
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      zipkin: {}
+      jaeger:
+        protocols:
+          grpc: {}
+          thrift_http: {}
+
+# ----- Ingester (writes traces to MinIO) -----
+ingester:
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+  persistence:
+    enabled: true
+    storageClass: hcloud-volumes
+    size: 10Gi  # WAL buffer for in-flight traces
+
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: observability
+      effect: NoSchedule
+
+  nodeSelector:
+    dedicated: observability
+
+# ----- Querier (reads traces from MinIO for search) -----
+querier:
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: observability
+      effect: NoSchedule
+
+  nodeSelector:
+    dedicated: observability
+
+# ----- Query Frontend (fan-out query coordination) -----
+queryFrontend:
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: observability
+      effect: NoSchedule
+
+  nodeSelector:
+    dedicated: observability
+
+# ----- Compactor (merges + expires trace blocks in MinIO) -----
+compactor:
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: observability
+      effect: NoSchedule
+
+  nodeSelector:
+    dedicated: observability
+
+# ----- Metrics Generator (trace → metric conversion) -----
+metricsGenerator:
+  enabled: true
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: observability
+      effect: NoSchedule
+
+  nodeSelector:
+    dedicated: observability
+
+# ----- Gateway (optional nginx router for external access) -----
+gateway:
+  enabled: false
+
+# ----- Prometheus ServiceMonitor -----
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
+  additionalLabels:
+    release: kube-prometheus-stack
