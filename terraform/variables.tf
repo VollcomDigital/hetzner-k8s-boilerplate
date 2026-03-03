@@ -137,6 +137,33 @@ variable "worker_image" {
 }
 
 # -----------------------------------------------------------------------------
+# Observability Nodes (dedicated high-RAM nodes for LGTM stack)
+# -----------------------------------------------------------------------------
+
+variable "observability_node_count" {
+  description = "Number of dedicated observability nodes (0 to disable isolation, 2-3 recommended for production)"
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.observability_node_count >= 0 && var.observability_node_count <= 5
+    error_message = "Observability node count must be between 0 and 5."
+  }
+}
+
+variable "observability_server_type" {
+  description = "Hetzner server type for observability nodes (high-RAM recommended, e.g. cx41, cx51)"
+  type        = string
+  default     = "cx41"
+}
+
+variable "observability_image" {
+  description = "OS image for observability nodes"
+  type        = string
+  default     = "ubuntu-24.04"
+}
+
+# -----------------------------------------------------------------------------
 # k3s Configuration
 # -----------------------------------------------------------------------------
 

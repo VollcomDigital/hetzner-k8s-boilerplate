@@ -23,6 +23,11 @@ worker_count       = 3
 worker_server_type = "cpx41" # 8 vCPU, 16GB RAM
 worker_image       = "ubuntu-24.04"
 
+# Dedicated observability nodes (isolated LGTM stack)
+observability_node_count   = 2
+observability_server_type  = "cx41" # 8 vCPU, 16GB RAM (high-RAM for Loki/Tempo)
+observability_image        = "ubuntu-24.04"
+
 # Location
 location     = "fsn1" # Falkenstein (good connectivity)
 network_zone = "eu-central"

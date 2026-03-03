@@ -102,6 +102,38 @@ variable "cluster_dns" {
   type = string
 }
 
+# -- Observability Nodes --
+
+variable "observability_node_count" {
+  description = "Number of dedicated observability nodes for the LGTM stack"
+  type        = number
+  default     = 0
+}
+
+variable "observability_server_type" {
+  description = "Server type for observability nodes (high-RAM recommended)"
+  type        = string
+  default     = "cx41"
+}
+
+variable "observability_image" {
+  description = "OS image for observability nodes"
+  type        = string
+  default     = "ubuntu-24.04"
+}
+
+variable "observability_firewall_id" {
+  description = "Firewall ID for observability nodes"
+  type        = number
+  default     = 0
+}
+
+variable "cloud_init_observability_path" {
+  description = "Path to the cloud-init template for observability nodes"
+  type        = string
+  default     = ""
+}
+
 # -- SSH --
 
 variable "ssh_public_key_path" {

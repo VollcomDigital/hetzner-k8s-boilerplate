@@ -49,6 +49,11 @@ output "k3s_version" {
   value       = var.k3s_version
 }
 
+output "observability_ips" {
+  description = "Public IPs of observability nodes"
+  value       = module.servers.observability_ips
+}
+
 output "network_id" {
   description = "Hetzner private network ID"
   value       = module.network.network_id

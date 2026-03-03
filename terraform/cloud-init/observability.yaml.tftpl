@@ -1,0 +1,59 @@
+#cloud-config
+# Observability node: k3s agent with taint role=observability:NoSchedule
+# and label node-role.kubernetes.io/observability=true
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - wireguard
+  - open-iscsi
+  - nfs-common
+  - jq
+  - apparmor
+  - apparmor-utils
+
+write_files:
+  - path: /etc/sysctl.d/99-kubernetes.conf
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+      net.ipv6.conf.all.forwarding        = 1
+      fs.inotify.max_user_instances       = 8192
+      fs.inotify.max_user_watches         = 524288
+      vm.max_map_count                    = 262144
+
+  - path: /etc/modules-load.d/k8s.conf
+    content: |
+      br_netfilter
+      overlay
+      ip_tables
+      iptable_filter
+      iptable_nat
+      wireguard
+
+runcmd:
+  - sysctl --system
+  - modprobe br_netfilter overlay ip_tables iptable_filter iptable_nat wireguard
+
+  # Wait for control plane API to be reachable
+  - |
+    until curl -sk https://${api_server_lb}:6443/healthz 2>/dev/null; do
+      echo "Waiting for Kubernetes API at ${api_server_lb}:6443..."
+      sleep 10
+    done
+
+  # Install k3s agent with observability taint and label
+  - |
+    curl -sfL https://get.k3s.io | \
+      INSTALL_K3S_VERSION="${k3s_version}" \
+      K3S_URL="https://${api_server_lb}:6443" \
+      K3S_TOKEN="${k3s_token}" \
+      sh -s - agent \
+        --node-name "${node_name}" \
+        --kubelet-arg "cloud-provider=external" \
+        --kubelet-arg "max-pods=110" \
+        --node-taint "role=observability:NoSchedule" \
+        --node-label "node-role.kubernetes.io/observability=true"

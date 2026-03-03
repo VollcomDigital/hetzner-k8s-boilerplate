@@ -31,6 +31,14 @@ worker_count       = 3
 worker_server_type = "cpx31"           # 4 vCPU, 8GB RAM, 160GB NVMe
 worker_image       = "ubuntu-24.04"
 
+# -- Observability Nodes (optional) -------------------------------------------
+# Dedicated high-RAM nodes for the LGTM stack (Prometheus, Loki, Tempo, Grafana).
+# Set to 0 to run observability on worker nodes (default).
+# Set to 2-3 for production isolation (prevents resource contention).
+observability_node_count   = 0              # 0 (disabled) | 2-3 (production)
+observability_server_type  = "cx41"         # 8 vCPU, 16GB RAM (high-RAM recommended)
+observability_image        = "ubuntu-24.04"
+
 # -- k3s Configuration --------------------------------------------------------
 k3s_version = "v1.30.2+k3s1"
 pod_cidr    = "10.42.0.0/16"
