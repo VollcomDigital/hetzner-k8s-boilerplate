@@ -1,0 +1,268 @@
+# OTel-Instrumented Application Example
+# Demonstrates how to configure a Kubernetes workload to send telemetry to
+# Grafana Alloy → LGTM stack (Loki, Prometheus, Tempo).
+#
+# Key annotations and env vars to copy into your own Deployments.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+  labels:
+    name: production
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-service
+  namespace: production
+  labels:
+    app.kubernetes.io/name: api-service
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: my-application
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-service
+  template:
+    metadata:
+      labels:
+        app: api-service
+        app.kubernetes.io/name: api-service
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: my-application
+      annotations:
+        # Prometheus auto-scrape annotation (belt-and-suspenders alongside ServiceMonitor)
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: api-service
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+
+      containers:
+        - name: api-service
+          image: your-registry/api-service:1.0.0
+          ports:
+            - name: http
+              containerPort: 8000
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+          env:
+            # ── OpenTelemetry configuration ──────────────────────────────────
+            # Service identity — appears as the service name in Tempo traces,
+            # Prometheus metrics (service label), and Loki log streams (app label).
+            - name: OTEL_SERVICE_NAME
+              value: "api-service"
+            - name: OTEL_SERVICE_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['app.kubernetes.io/version']
+
+            # Ship all telemetry to Grafana Alloy (OTLP gRPC on port 4317).
+            # Alloy routes: traces → Tempo, metrics → Prometheus, logs → Loki.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://alloy.logging.svc.cluster.local:4317"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
+
+            # Resource attributes — propagated to every span/metric/log.
+            # The k8s.* values are auto-populated by Alloy's k8sattributes processor,
+            # but setting them here ensures they appear even before Alloy enriches them.
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "k8s.namespace.name=$(NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.node.name=$(NODE_NAME)"
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+
+            # ── LLM configuration (via ExternalSecret → Secret) ──────────────
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-credentials
+                  key: openai-api-key
+                  optional: true
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api-service
+  namespace: production
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  namespace: production
+  labels:
+    app: api-service
+    app.kubernetes.io/name: api-service
+spec:
+  selector:
+    app: api-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# ServiceMonitor — Prometheus will scrape /metrics from this service.
+# OTel metrics exported by the app appear in Grafana → Prometheus datasource.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api-service
+  namespace: production
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+---
+# HorizontalPodAutoscaler — scale on CPU AND custom OTel metric (request rate)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-service
+  namespace: production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+# PodDisruptionBudget — maintain availability during node drains
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-service
+  namespace: production
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: api-service
+---
+# NetworkPolicy — allow ingress from NGINX, egress to Alloy (OTLP) and DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-service
+  namespace: production
+spec:
+  podSelector:
+    matchLabels:
+      app: api-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # OTLP to Alloy (traces, metrics, logs)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    # External APIs (OpenAI, Anthropic, etc.)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    # DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53

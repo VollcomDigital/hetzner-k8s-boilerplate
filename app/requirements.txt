@@ -1,0 +1,28 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+httpx==0.28.0
+
+# OpenTelemetry core
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-exporter-otlp-proto-grpc==1.29.0
+
+# OTel auto-instrumentation for FastAPI / HTTP
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-httpx==0.50b0
+opentelemetry-instrumentation-logging==0.50b0
+
+# OpenLLMetry — OTel instrumentation for OpenAI, Anthropic, HuggingFace, etc.
+# Uses OTel GenAI semantic conventions (gen_ai.*) that feed Grafana LLM dashboards.
+opentelemetry-instrumentation-openai==0.33.6
+traceloop-sdk==0.33.6
+
+# Structured logging (no print())
+structlog==24.4.0
+
+# Type safety
+pydantic==2.9.2
+pydantic-settings==2.6.1
+
+# OpenAI SDK (example LLM client)
+openai==1.57.0
