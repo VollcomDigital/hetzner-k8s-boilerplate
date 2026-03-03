@@ -1,0 +1,159 @@
+# Example: LLM-instrumented Python application
+#
+# This deployment demonstrates how to enable LLM observability using:
+#   1. OpenTelemetry auto-instrumentation (via OTel Operator annotation)
+#   2. OpenLLMetry (Traceloop) for GenAI-specific traces
+#
+# Prerequisites:
+#   - OTel Operator deployed: make otel-operator
+#   - Grafana Alloy deployed: make collector
+#   - Tempo deployed: make tracing
+#
+# The OTel auto-instrumentation annotation injects the Python SDK.
+# For LLM-specific tracing, your app should also include:
+#   pip install opentelemetry-instrumentation-openai  (or traceloop-sdk)
+#
+# Environment variables injected by the OTel Operator:
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy.collector.svc.cluster.local:4317
+#   OTEL_SERVICE_NAME=<pod-name>
+#   OTEL_RESOURCE_ATTRIBUTES=k8s.cluster.name=hetzner-k8s
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-app-example
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-service
+  namespace: llm-app-example
+  labels:
+    app: llm-service
+  annotations:
+    instrumentation.opentelemetry.io/inject-python: "otel-system/default"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llm-service
+  template:
+    metadata:
+      labels:
+        app: llm-service
+      annotations:
+        instrumentation.opentelemetry.io/inject-python: "otel-system/default"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: llm-service
+          image: your-registry/llm-service:latest  # Replace with your image
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            # LLM API key from external secret (never hardcode)
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-keys
+                  key: openai-api-key
+
+            # OpenLLMetry / Traceloop configuration
+            - name: TRACELOOP_BASE_URL
+              value: "http://alloy.collector.svc.cluster.local:4318"
+
+            # OTel GenAI semantic convention enrichment
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.name=llm-service,service.version=1.0.0,deployment.environment=production"
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-service
+  namespace: llm-app-example
+  labels:
+    app: llm-service
+spec:
+  type: ClusterIP
+  selector:
+    app: llm-service
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+---
+# Network policy: allow ingress from NGINX + egress to external LLM APIs and Alloy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: llm-service
+  namespace: llm-app-example
+spec:
+  podSelector:
+    matchLabels:
+      app: llm-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # DNS
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # HTTPS to external LLM APIs (OpenAI, Anthropic, etc.)
+    - ports:
+        - protocol: TCP
+          port: 443
+    # OTLP to Alloy collector
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: collector
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318

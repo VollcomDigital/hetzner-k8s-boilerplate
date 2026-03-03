@@ -1,0 +1,58 @@
+# OpenTelemetry auto-instrumentation CRDs
+# Inject into workloads via pod annotations:
+#   instrumentation.opentelemetry.io/inject-python: "true"
+#   instrumentation.opentelemetry.io/inject-nodejs: "true"
+#   instrumentation.opentelemetry.io/inject-java: "true"
+#   instrumentation.opentelemetry.io/inject-go: "otel-system/default"
+
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: default
+  namespace: otel-system
+spec:
+  exporter:
+    endpoint: http://alloy.collector.svc.cluster.local:4317
+
+  propagators:
+    - tracecontext
+    - baggage
+    - b3
+
+  sampler:
+    type: parentbased_traceidratio
+    argument: "1.0"
+
+  env:
+    - name: OTEL_RESOURCE_ATTRIBUTES
+      value: "k8s.cluster.name=hetzner-k8s"
+
+  python:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:latest
+    env:
+      - name: OTEL_PYTHON_LOG_CORRELATION
+        value: "true"
+      - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+        value: "true"
+      - name: OTEL_METRICS_EXPORTER
+        value: otlp
+      - name: OTEL_LOGS_EXPORTER
+        value: otlp
+
+  nodejs:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-nodejs:latest
+    env:
+      - name: OTEL_NODEJS_ENABLED_INSTRUMENTATIONS
+        value: "http,express,fastify,koa,grpc,dns,net,pg,mysql,redis,ioredis,mongodb"
+
+  java:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java:latest
+    env:
+      - name: OTEL_JAVAAGENT_ENABLED
+        value: "true"
+
+  go:
+    image: ghcr.io/open-telemetry/opentelemetry-go-instrumentation/autoinstrumentation-go:latest
+
+  dotnet:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-dotnet:latest

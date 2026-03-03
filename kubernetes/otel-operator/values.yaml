@@ -1,0 +1,18 @@
+# OpenTelemetry Operator Helm values
+# Ref: https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-operator
+
+manager:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+
+admissionWebhooks:
+  certManager:
+    enabled: true

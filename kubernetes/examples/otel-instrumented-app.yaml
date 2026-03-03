@@ -1,0 +1,170 @@
+# Example: Auto-instrumented microservice with OpenTelemetry
+#
+# This demonstrates how to enable API tracking (RED metrics + distributed tracing)
+# using the OTel Operator's auto-instrumentation injection.
+#
+# Simply add the annotation to your Deployment pod template:
+#   instrumentation.opentelemetry.io/inject-python: "otel-system/default"
+#   instrumentation.opentelemetry.io/inject-nodejs: "otel-system/default"
+#   instrumentation.opentelemetry.io/inject-java: "otel-system/default"
+#   instrumentation.opentelemetry.io/inject-go: "otel-system/default"
+#
+# The OTel SDK will automatically:
+#   1. Intercept incoming HTTP/gRPC requests
+#   2. Generate traces with span metadata (http.method, http.route, http.status_code)
+#   3. Export RED metrics (Rate, Errors, Duration) via span metrics in Tempo
+#   4. Forward all signals to Alloy -> Tempo/Prometheus/Loki
+#
+# Prerequisites:
+#   - OTel Operator: make otel-operator
+#   - Alloy: make collector
+#   - Tempo: make tracing
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sample-app
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-world-traced
+  namespace: sample-app
+  labels:
+    app: hello-world-traced
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hello-world-traced
+  template:
+    metadata:
+      labels:
+        app: hello-world-traced
+      annotations:
+        # Enable OTel auto-instrumentation for this Java app
+        instrumentation.opentelemetry.io/inject-java: "otel-system/default"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: hello
+          image: gcr.io/google-samples/hello-app:2.0
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-world-traced
+  namespace: sample-app
+  labels:
+    app: hello-world-traced
+spec:
+  type: ClusterIP
+  selector:
+    app: hello-world-traced
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hello-world-traced
+  namespace: sample-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hello-world-traced
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hello-world-traced
+  namespace: sample-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: hello-world-traced
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hello-world-traced
+  namespace: sample-app
+spec:
+  podSelector:
+    matchLabels:
+      app: hello-world-traced
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # DNS
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # OTLP to Alloy collector
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: collector
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
