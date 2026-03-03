@@ -1,0 +1,98 @@
+# MinIO Helm values — S3-compatible object storage for Loki and Tempo backends
+# Chart: minio/minio
+# Ref: https://github.com/minio/minio/tree/master/helm/minio
+
+# ----- Authentication -----
+# Credentials must be set via --set at install time or via an ExternalSecret.
+# rootUser and rootPassword are read from env vars MINIO_ROOT_USER / MINIO_ROOT_PASSWORD.
+rootUser: ""
+rootPassword: ""
+
+# ----- Deployment mode -----
+# Standalone for Hetzner middle-ground; upgrade to distributed (replicaCount=4)
+# when additional observability nodes are available.
+mode: standalone
+replicaCount: 1
+
+# ----- Persistence -----
+# Single 200Gi volume on the observability node.
+# Loki chunks (~50Gi) + Loki WAL (~10Gi) + Tempo traces (~50Gi) + headroom.
+persistence:
+  enabled: true
+  storageClass: hcloud-volumes
+  accessMode: ReadWriteOnce
+  size: 200Gi
+
+# ----- Resources -----
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+# ----- Buckets (auto-created on first boot) -----
+buckets:
+  - name: loki-chunks
+    policy: none
+    purge: false
+  - name: loki-ruler
+    policy: none
+    purge: false
+  - name: loki-admin
+    policy: none
+    purge: false
+  - name: tempo-traces
+    policy: none
+    purge: false
+
+# ----- Observability node isolation -----
+# Only schedule MinIO on nodes tainted with dedicated=observability:NoSchedule.
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: observability
+    effect: NoSchedule
+
+nodeSelector:
+  dedicated: observability
+
+# ----- Prometheus metrics -----
+metrics:
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+    additionalLabels:
+      release: kube-prometheus-stack
+
+# ----- Service -----
+service:
+  type: ClusterIP
+  port: 9000
+
+consoleService:
+  type: ClusterIP
+  port: 9001
+
+# ----- Security -----
+securityContext:
+  enabled: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+# Rootless — no capabilities needed
+containerSecurityContext:
+  enabled: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false  # MinIO writes to /data
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# ----- Network policy label -----
+podLabels:
+  app.kubernetes.io/component: object-storage
+  app.kubernetes.io/part-of: observability-stack
