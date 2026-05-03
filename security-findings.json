@@ -1,0 +1,150 @@
+{
+  "scan_metadata": {
+    "repository": "VollcomDigital/hetzner-k8s-boilerplate",
+    "branch": "cursor/at-rest-security-findings-328b",
+    "scan_date": "2026-05-03T09:00:56Z",
+    "scan_type": "at-rest-security-review",
+    "scanner": "vulnerability-hunter-agent"
+  },
+  "summary": {
+    "critical": 1,
+    "high": 4,
+    "medium": 3,
+    "total": 8
+  },
+  "findings": [
+    {
+      "severity": "critical",
+      "location": "terraform/cloud-init/control-plane.yaml.tftpl:51",
+      "description": "Kubeconfig written with world-readable permissions (0644). The k3s config at `/etc/rancher/k3s/k3s.yaml` contains the cluster admin certificate and key. Setting `write-kubeconfig-mode: \"0644\"` makes it readable by any user or process on the control-plane node, including compromised workloads that escape to the host.",
+      "impact": "Any process on the control-plane host (including a container escape or compromised sidecar) gains **full cluster-admin** access via the kubeconfig. This enables complete cluster takeover: read all secrets, deploy malicious workloads, pivot to cloud API via the Hetzner token stored in kube-system.",
+      "verified": true,
+      "attack_path": "1. Attacker compromises any workload running on a control-plane node (e.g., via an application vulnerability)\n2. Attacker escapes to the host filesystem or reads via `hostPath` volume\n3. Reads `/etc/rancher/k3s/k3s.yaml` (mode 0644 — readable by all)\n4. Uses embedded client certificate to authenticate as cluster-admin\n5. Reads `hcloud` Secret in kube-system → obtains Hetzner Cloud API token\n6. Full cluster + cloud infrastructure takeover",
+      "evidence": [
+        "terraform/cloud-init/control-plane.yaml.tftpl:51 — write-kubeconfig-mode: \"0644\"",
+        "terraform/cloud-init/control-plane.yaml.tftpl:100-102 — hcloud token stored as k8s Secret",
+        "kubernetes/security/pod-security.yaml — baseline PSA does not prevent hostPath mounts in all namespaces"
+      ],
+      "remediation": "Change the kubeconfig file permissions to `0600` (owner-only read):\n\n```yaml\nwrite-kubeconfig-mode: \"0600\"\n```\n\nThis ensures only root can read the kubeconfig. Additionally, consider running workloads with `restricted` Pod Security Standards to prevent `hostPath` mounts.",
+      "poc_video_url": "",
+      "poc_video_notes": "PoC video not feasible — requires a running k3s cluster with a control-plane node to demonstrate file permission exploitation."
+    },
+    {
+      "severity": "high",
+      "location": "terraform/modules/firewall/variables.tf:11-21",
+      "description": "SSH (port 22) and Kubernetes API (port 6443) on control-plane nodes are open to `0.0.0.0/0` and `::/0` by default. The root `main.tf` does not pass `ssh_allowed_cidrs` or `api_allowed_cidrs` overrides, and no tfvars file (dev, staging, production) restricts them. This exposes root SSH and the K8s API directly to the internet on every deployed cluster.",
+      "impact": "Internet-exposed SSH to root on control-plane nodes enables brute-force and credential-stuffing attacks. Exposed K8s API (6443) on node IPs bypasses the load balancer, enabling direct unauthenticated probing. Combined with `anonymous-auth=false` this mitigates API abuse, but SSH root access remains a critical attack surface.",
+      "verified": true,
+      "attack_path": "1. Attacker scans Hetzner IP ranges for port 22 and 6443\n2. Discovers control-plane nodes with world-open SSH\n3. Attempts SSH brute-force against root (only SSH key auth mitigates this, but key-only is not enforced in cloud-init)\n4. Alternatively, probes K8s API on node IP:6443 for version disclosure, unauthenticated endpoints, or CVE exploitation\n5. If SSH key is compromised (leaked in CI, dev workstation), attacker gains root on control-plane → cluster-admin",
+      "evidence": [
+        "terraform/modules/firewall/variables.tf:14 — default = [\"0.0.0.0/0\", \"::/0\"] for ssh_allowed_cidrs",
+        "terraform/modules/firewall/variables.tf:20 — default = [\"0.0.0.0/0\", \"::/0\"] for api_allowed_cidrs",
+        "terraform/main.tf:26-32 — firewall module invoked without ssh_allowed_cidrs or api_allowed_cidrs",
+        "terraform/modules/firewall/main.tf:10-15 — SSH rule using var.ssh_allowed_cidrs",
+        "terraform/modules/firewall/main.tf:18-23 — API rule using var.api_allowed_cidrs",
+        "terraform/envs/production.tfvars — no ssh_allowed_cidrs or api_allowed_cidrs override"
+      ],
+      "remediation": "1. Override defaults in all environment tfvars (especially production):\n\n```hcl\nssh_allowed_cidrs = [\"<your-office-cidr>/32\", \"<vpn-cidr>/24\"]\napi_allowed_cidrs = [\"<your-office-cidr>/32\", \"<vpn-cidr>/24\"]\n```\n\n2. Consider removing the K8s API firewall rule on nodes entirely and forcing all API access through the load balancer.\n\n3. Add `PasswordAuthentication no` and `PermitRootLogin prohibit-password` to cloud-init SSH config.",
+      "poc_video_url": "",
+      "poc_video_notes": "PoC video not feasible — requires scanning live infrastructure."
+    },
+    {
+      "severity": "high",
+      "location": "terraform/modules/firewall/main.tf:81-87,189-195",
+      "description": "The entire Kubernetes NodePort range (TCP 30000-32767) is exposed to the internet (`0.0.0.0/0`) on both control-plane and worker node firewalls. Any Kubernetes Service of type `NodePort` becomes publicly accessible, regardless of whether it was intended to be internal-only.",
+      "impact": "Internal services (databases, message queues, admin dashboards, debug endpoints) accidentally or intentionally exposed as NodePort services become reachable from the internet. This bypasses ingress TLS termination, authentication middleware, and network policies. An attacker can directly access any NodePort service on any cluster node's public IP.",
+      "verified": true,
+      "attack_path": "1. Developer creates a Service with `type: NodePort` for debugging or internal access\n2. Kubernetes allocates a port in 30000-32767 range\n3. Attacker scans node public IPs on the NodePort range\n4. Discovers exposed service (e.g., database admin UI, Redis, internal API)\n5. Directly accesses the service without TLS or authentication",
+      "evidence": [
+        "terraform/modules/firewall/main.tf:82-87 — control_plane NodePort rule with source_ips 0.0.0.0/0",
+        "terraform/modules/firewall/main.tf:190-195 — worker NodePort rule with source_ips 0.0.0.0/0",
+        "kubernetes/security/network-policies/default-deny.yaml — only covers namespace 'default', not cluster-wide"
+      ],
+      "remediation": "Remove the NodePort range from both firewalls. All external traffic should flow through the NGINX Ingress Controller (already deployed via Hetzner LB on ports 80/443):\n\n```hcl\n# Remove these rule blocks from both control_plane and worker firewalls:\n# rule {\n#   direction  = \"in\"\n#   protocol   = \"tcp\"\n#   port       = \"30000-32767\"\n#   source_ips = [\"0.0.0.0/0\", \"::/0\"]\n# }\n```\n\nIf NodePorts are required for specific use cases, restrict `source_ips` to the load balancer IPs or internal network only.",
+      "poc_video_url": "",
+      "poc_video_notes": "PoC video not feasible — requires live cluster infrastructure to demonstrate port scanning."
+    },
+    {
+      "severity": "high",
+      "location": "terraform/cloud-init/control-plane.yaml.tftpl:49",
+      "description": "Kubernetes network policy enforcement is explicitly disabled via `disable-network-policy: true` in the k3s configuration. While Cilium is installed as a replacement CNI, the bootstrap sequence creates a window where the cluster runs without any network policy enforcement. If Cilium installation fails (line 107-122), the cluster permanently operates without NetworkPolicy enforcement.",
+      "impact": "All pod-to-pod traffic is unrestricted. The NetworkPolicy resources defined in `kubernetes/security/network-policies/` become no-ops if Cilium fails to install. Any compromised pod can freely communicate with all other pods across all namespaces, access the Kubernetes API, and reach the cloud metadata service.",
+      "verified": true,
+      "attack_path": "1. Cilium CLI install fails (e.g., GitHub rate limit on line 107, network issue, version incompatibility)\n2. k3s cluster starts with `disable-network-policy: true` and no CNI-level enforcement\n3. All NetworkPolicy manifests in kubernetes/security/network-policies/ are accepted but NOT enforced\n4. Attacker compromises any pod → lateral movement to any service in any namespace\n5. Accesses Loki (auth disabled), Kubernetes API, etcd metrics, and cloud metadata without restriction",
+      "evidence": [
+        "terraform/cloud-init/control-plane.yaml.tftpl:49 — disable-network-policy: true",
+        "terraform/cloud-init/control-plane.yaml.tftpl:107 — Cilium CLI version fetched from GitHub (can fail)",
+        "kubernetes/security/network-policies/default-deny.yaml:5 — NetworkPolicy only in 'default' namespace",
+        "kubernetes/logging/values-loki.yaml:7 — Loki auth_enabled: false (reachable if no network policy)"
+      ],
+      "remediation": "1. Add a health check after Cilium installation that blocks further provisioning if Cilium is not running:\n\n```yaml\n- |\n  cilium status --wait --wait-duration 5m || {\n    echo 'CRITICAL: Cilium CNI failed to install. Network policies will NOT be enforced.'\n    exit 1\n  }\n```\n\n2. Consider using Cilium's Helm-based installation instead of the CLI for more reliable deployment.\n\n3. Add a smoke test that verifies NetworkPolicy enforcement is active before deploying workloads.",
+      "poc_video_url": "",
+      "poc_video_notes": "PoC video not feasible — requires a live cluster where Cilium installation is interrupted to demonstrate the gap."
+    },
+    {
+      "severity": "high",
+      "location": "terraform/cloud-init/control-plane.yaml.tftpl:100-102",
+      "description": "The Hetzner Cloud API token (full read/write) is embedded directly in cloud-init user_data and then stored as a Kubernetes Secret in kube-system namespace. Hetzner cloud-init user_data is accessible via the instance metadata service. Any process on the server can read the token from the metadata endpoint, and any entity with `get secrets` permission in kube-system can read it from the cluster.",
+      "impact": "The Hetzner Cloud API token provides full control over the cloud project: create/delete servers, modify firewalls, read/modify DNS, access volumes. An attacker who gains access to the token can destroy the entire infrastructure, create rogue servers for cryptomining, modify firewall rules to expose additional services, or exfiltrate data from volumes.",
+      "verified": true,
+      "attack_path": "1. Attacker gains code execution on any control-plane node (via compromised workload + container escape, or SSH)\n2. Reads cloud-init user_data from Hetzner metadata service: `curl http://169.254.169.254/latest/user-data`\n3. Extracts `hcloud_token` from the plaintext cloud-init YAML\n4. Alternatively: reads the `hcloud` Secret from kube-system via Kubernetes API (if they have cluster-admin from the 0644 kubeconfig)\n5. Uses the token to call Hetzner API: destroy servers, modify firewalls, create backdoor servers",
+      "evidence": [
+        "terraform/cloud-init/control-plane.yaml.tftpl:100-102 — kubectl create secret with hcloud_token",
+        "terraform/modules/server/main.tf:55-67 — hcloud_token passed to cloud-init template",
+        "terraform/modules/server/variables.tf:27-30 — hcloud_token variable (sensitive but in user_data)"
+      ],
+      "remediation": "1. Use Hetzner Cloud Controller Manager's service account token mechanism or External Secrets Operator to inject the token at runtime rather than embedding it in user_data.\n\n2. If cloud-init injection is unavoidable, delete the plaintext token from the user_data after the Secret is created:\n\n```yaml\n- |\n  /usr/local/bin/kubectl -n kube-system create secret generic hcloud \\\n    --from-literal=token=\"${hcloud_token}\" \\\n    --from-literal=network=\"${cluster_name}-network\" \\\n    --dry-run=client -o yaml | /usr/local/bin/kubectl apply -f -\n```\n\n3. Restrict metadata service access using iptables rules in cloud-init to prevent pods from reaching `169.254.169.254`.",
+      "poc_video_url": "",
+      "poc_video_notes": "PoC video not feasible — requires access to a running Hetzner Cloud instance to demonstrate metadata service token extraction."
+    },
+    {
+      "severity": "medium",
+      "location": "kubernetes/security/network-policies/default-deny.yaml:5",
+      "description": "All three NetworkPolicy manifests (default-deny, allow-monitoring, allow-ingress-nginx) are scoped exclusively to `namespace: default`. Critical namespaces like `monitoring`, `logging`, `argocd`, `ingress-nginx`, `kube-system`, `external-secrets`, and `velero` have **no network policies applied**. This means pod-to-pod traffic within and between these namespaces is completely unrestricted.",
+      "impact": "An attacker who compromises any workload in an unprotected namespace (e.g., a vulnerable Grafana plugin in `monitoring`, or log injection into Loki in `logging`) can freely access all other services in those namespaces and across the cluster. Combined with Loki having `auth_enabled: false`, any pod can query and inject logs.",
+      "verified": true,
+      "attack_path": "1. Attacker compromises a pod in the `monitoring` namespace (e.g., via a Grafana vulnerability or dashboard SSRF)\n2. No NetworkPolicy restricts egress from monitoring namespace\n3. Attacker pivots to Loki in `logging` namespace (no auth, no NetworkPolicy) → reads all cluster logs\n4. Attacker accesses Kubernetes API, ArgoCD server, or other internal services unrestricted\n5. Uses ArgoCD to deploy malicious manifests or reads secrets from logs",
+      "evidence": [
+        "kubernetes/security/network-policies/default-deny.yaml:5 — namespace: default",
+        "kubernetes/security/network-policies/allow-monitoring.yaml:5 — namespace: default",
+        "kubernetes/security/network-policies/allow-ingress-nginx.yaml:5 — namespace: default",
+        "kubernetes/logging/values-loki.yaml:7 — auth_enabled: false"
+      ],
+      "remediation": "Apply default-deny NetworkPolicies to all namespaces, not just `default`. Create namespace-specific policies:\n\n```yaml\n# Apply to each namespace: monitoring, logging, argocd, velero, etc.\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: default-deny-all\n  namespace: monitoring  # Repeat for each namespace\nspec:\n  podSelector: {}\n  policyTypes:\n    - Ingress\n    - Egress\n```\n\nThen add specific allow rules for required inter-service communication.",
+      "poc_video_url": "",
+      "poc_video_notes": "PoC video not feasible — requires running cluster with workloads to demonstrate unrestricted cross-namespace communication."
+    },
+    {
+      "severity": "medium",
+      "location": "terraform/outputs.tf:26-34",
+      "description": "The Terraform outputs `ssh_command_cp` and `ssh_private_key_path` expose the SSH private key filesystem path in plain text. These outputs are not marked as `sensitive`, meaning they are displayed in Terraform plan/apply output, stored in Terraform state, and visible in CI logs. While `k3s_token` is correctly marked sensitive, these SSH-related outputs are not.",
+      "impact": "The SSH private key path is leaked in CI/CD logs and Terraform state. If the Terraform state backend is not encrypted or access-controlled, an attacker who gains access to state can determine exactly where the SSH key is located. Combined with the world-open SSH firewall rules, this provides a clear attack roadmap for infrastructure compromise.",
+      "verified": true,
+      "attack_path": "1. Attacker gains access to Terraform state file (e.g., misconfigured S3 bucket, shared state backend, CI log exposure)\n2. Reads `ssh_private_key_path` output → knows exact location of SSH key\n3. Reads `ssh_command_cp` output → has ready-made SSH command template\n4. Reads `control_plane_ips` output → has target IP addresses\n5. If attacker also accesses the filesystem where the key resides (e.g., compromised developer workstation), they have root SSH access to all control-plane nodes",
+      "evidence": [
+        "terraform/outputs.tf:26-29 — ssh_command_cp not marked sensitive",
+        "terraform/outputs.tf:31-34 — ssh_private_key_path not marked sensitive",
+        "terraform/outputs.tf:36-39 — k3s_token IS marked sensitive (inconsistent treatment)"
+      ],
+      "remediation": "Mark SSH-related outputs as sensitive:\n\n```hcl\noutput \"ssh_command_cp\" {\n  description = \"SSH command template for control plane nodes\"\n  value       = \"ssh -i ${var.ssh_private_key_path} root@<CONTROL_PLANE_IP>\"\n  sensitive   = true\n}\n\noutput \"ssh_private_key_path\" {\n  description = \"Path to the SSH private key used for node access\"\n  value       = var.ssh_private_key_path\n  sensitive   = true\n}\n```",
+      "poc_video_url": "",
+      "poc_video_notes": "PoC video not feasible — requires access to Terraform state to demonstrate output exposure."
+    },
+    {
+      "severity": "medium",
+      "location": "scripts/upgrade.sh:29,47-48",
+      "description": "The upgrade script disables SSH host key verification (`StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`) and then pipes a remote script via `curl | sh` over this unauthenticated SSH channel. The same pattern appears in the Terraform provisioner at `terraform/main.tf:163`. An attacker performing a man-in-the-middle attack on the SSH connection can inject arbitrary commands that execute as root on every cluster node during upgrades.",
+      "impact": "During a rolling upgrade of the entire cluster, an MITM attacker on the network path between the operator's machine and the cluster nodes can intercept SSH connections and inject malicious commands. Since upgrades touch every node sequentially, a single MITM position can compromise the entire cluster. The remote `curl -sfL https://get.k3s.io | sh -` on the SSH target also trusts the remote script without integrity verification.",
+      "verified": true,
+      "attack_path": "1. Attacker positions on the network path between operator and Hetzner nodes (e.g., compromised ISP, BGP hijack, ARP poisoning on shared network)\n2. Operator runs `scripts/upgrade.sh v1.31.0+k3s1`\n3. Script connects to each node via SSH with host key verification disabled\n4. Attacker intercepts SSH connection, presents their own host key (accepted without verification)\n5. Attacker's fake SSH server receives the `curl | sh` command and instead executes a reverse shell or persistence mechanism as root\n6. All cluster nodes compromised one-by-one during the rolling upgrade",
+      "evidence": [
+        "scripts/upgrade.sh:29 — SSH_OPTS=\"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\"",
+        "scripts/upgrade.sh:47-48 — ssh with disabled host key checking + curl|sh on remote",
+        "terraform/main.tf:163 — Same SSH_OPTS pattern in kubeconfig provisioner"
+      ],
+      "remediation": "1. Remove `StrictHostKeyChecking=no` and use proper host key management. Populate `known_hosts` from Terraform outputs or Hetzner API:\n\n```bash\n# Fetch host keys after provisioning\nfor ip in \"${CP_IPS[@]}\"; do\n  ssh-keyscan -H \"$ip\" >> ~/.ssh/known_hosts 2>/dev/null\ndone\n```\n\n2. For the `curl | sh` pattern, download and verify the k3s installer checksum before execution:\n\n```bash\ncurl -sfL -o /tmp/k3s-install.sh https://get.k3s.io\nsha256sum /tmp/k3s-install.sh  # Compare against published hash\nINSTALL_K3S_VERSION='${TARGET_VERSION}' sh /tmp/k3s-install.sh\n```",
+      "poc_video_url": "",
+      "poc_video_notes": "PoC video not feasible — demonstrating SSH MITM requires network-level interception on live infrastructure."
+    }
+  ]
+}
