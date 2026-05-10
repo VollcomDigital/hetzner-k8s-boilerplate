@@ -1,0 +1,130 @@
+{
+  "scan_metadata": {
+    "repository": "VollcomDigital/hetzner-k8s-boilerplate",
+    "branch": "main",
+    "scan_date": "2026-05-10T09:01:00Z",
+    "scan_type": "at-rest-security-review",
+    "scanner": "vulnerability-hunter-agent"
+  },
+  "summary": {
+    "critical": 0,
+    "high": 3,
+    "medium": 4,
+    "total": 7
+  },
+  "findings": [
+    {
+      "id": "VULN-001",
+      "severity": "high",
+      "location": "terraform/modules/firewall/variables.tf:11-21",
+      "description": "Kubernetes API server (6443) and SSH (22) firewall rules default to `0.0.0.0/0` (world-open). Both `ssh_allowed_cidrs` and `api_allowed_cidrs` default to unrestricted access from any IP. The root `variables.tf` does not override these defaults, meaning a `terraform apply` without explicit CIDR restrictions exposes the K8s API and SSH to the entire internet.",
+      "impact": "An external attacker can directly reach the Kubernetes API server on port 6443 and SSH on port 22 from any IP address. This enables brute-force attacks against SSH, credential stuffing against the K8s API, and exploitation of any future K8s API CVEs without network-level barriers. Combined with `write-kubeconfig-mode: 0644` (cloud-init), a compromised low-privilege process on any node can read the kubeconfig and authenticate to the internet-exposed API.",
+      "verified": true,
+      "attack_path": "1. Attacker scans Hetzner IP ranges for port 6443/22.\n2. Firewall defaults (`0.0.0.0/0`) allow the connection through.\n3. For SSH: attacker attempts brute-force or exploits an SSH vulnerability against root.\n4. For K8s API: attacker attempts unauthenticated requests (blocked by `anonymous-auth=false`) or uses stolen credentials/tokens to gain cluster access.\n5. If any node process reads the world-readable kubeconfig (`0644`), those credentials work over the internet.",
+      "evidence": [
+        "terraform/modules/firewall/variables.tf:14 — default = [\"0.0.0.0/0\", \"::/0\"]",
+        "terraform/modules/firewall/variables.tf:20 — default = [\"0.0.0.0/0\", \"::/0\"]",
+        "terraform/modules/firewall/main.tf:10-15 — SSH rule uses var.ssh_allowed_cidrs",
+        "terraform/modules/firewall/main.tf:17-23 — API rule uses var.api_allowed_cidrs",
+        "terraform/cloud-init/control-plane.yaml.tftpl:51 — write-kubeconfig-mode: 0644"
+      ],
+      "remediation": "Change the defaults for `ssh_allowed_cidrs` and `api_allowed_cidrs` to empty lists or documented operator CIDRs. Require explicit opt-in for public access:\n\n```hcl\nvariable \"ssh_allowed_cidrs\" {\n  description = \"CIDRs allowed SSH access\"\n  type        = list(string)\n  # No default — force explicit configuration\n}\n\nvariable \"api_allowed_cidrs\" {\n  description = \"CIDRs allowed access to the Kubernetes API\"\n  type        = list(string)\n  # No default — force explicit configuration\n}\n```\n\nAlso change `write-kubeconfig-mode` from `0644` to `0600` in the cloud-init template.",
+      "poc_video_notes": "Infrastructure configuration finding — no runtime PoC applicable without deploying actual cloud resources."
+    },
+    {
+      "id": "VULN-002",
+      "severity": "high",
+      "location": "terraform/cloud-init/control-plane.yaml.tftpl:51",
+      "description": "The k3s kubeconfig file is written with world-readable permissions (`write-kubeconfig-mode: 0644`). This file contains the cluster admin certificate and key. Any process running on a control-plane node — even as an unprivileged user — can read the full admin kubeconfig.",
+      "impact": "A low-privilege process on a control-plane node (e.g., a compromised container that escaped to the host, or any user account) can read `/etc/rancher/k3s/k3s.yaml` and obtain full cluster-admin credentials. Combined with the internet-exposed API server (VULN-001), these credentials can be exfiltrated and used remotely for complete cluster takeover.",
+      "verified": true,
+      "attack_path": "1. Attacker compromises any workload running on a control-plane node (e.g., via a container escape or application vulnerability).\n2. Attacker reads `/etc/rancher/k3s/k3s.yaml` which is world-readable (mode `0644`).\n3. The kubeconfig contains the client certificate and key for cluster-admin access.\n4. Attacker uses these credentials against the K8s API (accessible over the internet per VULN-001).\n5. Full cluster compromise: create pods, read secrets, deploy cryptominers, pivot to cloud provider via hcloud token in kube-system secrets.",
+      "evidence": [
+        "terraform/cloud-init/control-plane.yaml.tftpl:51 — write-kubeconfig-mode: \"0644\"",
+        "terraform/cloud-init/control-plane.yaml.tftpl:100-103 — hcloud token stored as kube-system secret"
+      ],
+      "remediation": "Change the kubeconfig permission to `0600`:\n\n```yaml\nwrite-kubeconfig-mode: \"0600\"\n```\n\nThis ensures only root can read the kubeconfig file on control-plane nodes.",
+      "poc_video_notes": "Infrastructure configuration finding — demonstrable only on a live k3s deployment."
+    },
+    {
+      "id": "VULN-003",
+      "severity": "high",
+      "location": "kubernetes/monitoring/install.sh:18-21",
+      "description": "The Grafana admin password is printed to stdout during installation. The `monitoring/install.sh` script generates a random password and echoes it in cleartext. In CI/CD pipelines (GitHub Actions, shared terminals), this password is captured in build logs that may be accessible to a wider audience than intended.",
+      "impact": "Anyone with access to CI/CD logs, terminal history, or shared build output can retrieve the Grafana admin password. Grafana has access to all Prometheus metrics, Loki logs, and can be used to create alert rules — providing broad observability over the entire cluster's operations and potentially exposing sensitive application data in logs.",
+      "verified": true,
+      "attack_path": "1. Operator runs `make monitoring` or `scripts/deploy.sh` which invokes `kubernetes/monitoring/install.sh`.\n2. Line 20 prints: `Grafana admin password: $GRAFANA_PASSWORD`.\n3. If run in CI (e.g., GitHub Actions), the password appears in the workflow run log.\n4. Any user with repository read access can view the workflow run log.\n5. Attacker retrieves the password and logs into Grafana at the ingress URL.\n6. Same pattern exists in `kubernetes/system/dex/install.sh:51-61` where OIDC client secrets are printed.",
+      "evidence": [
+        "kubernetes/monitoring/install.sh:20 — echo \" Grafana admin password: $GRAFANA_PASSWORD\"",
+        "kubernetes/system/dex/install.sh:51 — echo \"  Kubernetes client secret: $DEX_K8S_SECRET\"",
+        "kubernetes/system/dex/install.sh:52 — echo \"  ArgoCD client secret:     $DEX_ARGOCD_SECRET\""
+      ],
+      "remediation": "Store passwords in Kubernetes Secrets and reference them, rather than printing to stdout:\n\n```bash\n# Store in a Kubernetes secret instead of printing\nkubectl create secret generic grafana-admin \\\n  --namespace monitoring \\\n  --from-literal=admin-password=\"$GRAFANA_PASSWORD\" \\\n  --dry-run=client -o yaml | kubectl apply -f -\n\necho \"Grafana admin password stored in secret 'grafana-admin' in namespace 'monitoring'\"\necho \"Retrieve with: kubectl get secret grafana-admin -n monitoring -o jsonpath='{.data.admin-password}' | base64 -d\"\n```\n\nApply the same pattern to the Dex install script for OIDC client secrets.",
+      "poc_video_notes": "Verifiable by running the script and observing stdout — no destructive action needed."
+    },
+    {
+      "id": "VULN-004",
+      "severity": "medium",
+      "location": "kubernetes/logging/values-loki.yaml:7",
+      "description": "Loki is deployed with authentication disabled (`auth_enabled: false`) and the gateway is also disabled (`gateway.enabled: false`). Any pod in the cluster that can reach the Loki service can push arbitrary log entries or query all stored logs without authentication. No NetworkPolicy restricts access to Loki's namespace.",
+      "impact": "A compromised workload in any namespace can query Loki for all cluster logs (potentially containing secrets, tokens, PII in application logs) and inject fake log entries to cover tracks or trigger false alerts. Since there are no NetworkPolicies for the `logging` namespace, this is reachable from any pod.",
+      "verified": true,
+      "attack_path": "1. Attacker compromises any pod in the cluster.\n2. Attacker discovers the Loki service endpoint (e.g., `loki.logging.svc.cluster.local:3100`).\n3. No authentication is required (`auth_enabled: false`).\n4. No NetworkPolicy blocks traffic to the `logging` namespace.\n5. Attacker queries `/loki/api/v1/query_range` to exfiltrate all cluster logs.\n6. Attacker pushes fake log entries via `/loki/api/v1/push` to pollute audit trails.",
+      "evidence": [
+        "kubernetes/logging/values-loki.yaml:7 — auth_enabled: false",
+        "kubernetes/logging/values-loki.yaml:51 — gateway.enabled: false",
+        "No NetworkPolicy files exist for the logging namespace"
+      ],
+      "remediation": "Enable Loki authentication or deploy a gateway with auth:\n\n```yaml\nloki:\n  auth_enabled: true\n\ngateway:\n  enabled: true\n```\n\nAdditionally, add a NetworkPolicy for the `logging` namespace to restrict ingress to only Promtail and Grafana pods.",
+      "poc_video_notes": "Requires a running cluster to demonstrate — query Loki API from any pod without credentials."
+    },
+    {
+      "id": "VULN-005",
+      "severity": "medium",
+      "location": "kubernetes/backup/velero/values.yaml:34-38",
+      "description": "The Velero Helm values file contains placeholder AWS credentials (`YOUR_ACCESS_KEY` / `YOUR_SECRET_KEY`) in the `secretContents.cloud` field. While these are placeholder values, this pattern encourages operators to replace them with real credentials directly in this file, which would be committed to the Git repository.",
+      "impact": "If a developer replaces the placeholders with real AWS credentials and commits the file, the credentials are permanently stored in Git history. These credentials provide access to the S3-compatible backup storage, allowing an attacker with repo access to download all Velero backups (which contain Kubernetes secrets, configurations, and application data for all namespaces).",
+      "verified": true,
+      "attack_path": "1. Developer replaces `YOUR_ACCESS_KEY` / `YOUR_SECRET_KEY` with real AWS/S3 credentials.\n2. Developer commits and pushes to the repository.\n3. Any user with repo read access (or if the repo becomes public) obtains the credentials from Git history.\n4. Attacker uses credentials to access the S3 bucket containing Velero backups.\n5. Backups include all namespaces' resources including Secrets, giving access to database passwords, API tokens, TLS certificates.",
+      "evidence": [
+        "kubernetes/backup/velero/values.yaml:37 — aws_access_key_id=YOUR_ACCESS_KEY",
+        "kubernetes/backup/velero/values.yaml:38 — aws_secret_access_key=YOUR_SECRET_KEY"
+      ],
+      "remediation": "Remove the placeholder credentials from the values file entirely. Use External Secrets Operator (already deployed in this boilerplate) to inject the credentials:\n\n```yaml\ncredentials:\n  useSecret: true\n  existingSecret: velero-credentials  # Created by ExternalSecret\n```\n\nAdd a comment directing users to create the secret via ESO or `kubectl create secret`.",
+      "poc_video_notes": "Configuration pattern finding — no runtime exploitation needed."
+    },
+    {
+      "id": "VULN-006",
+      "severity": "medium",
+      "location": "kubernetes/backup/etcd-snapshot.yaml:22-61",
+      "description": "The etcd-snapshot CronJob runs as a privileged container with `hostNetwork: true` and mounts the host's `/var/lib/rancher/k3s` directory read-write. It uses the namespace default ServiceAccount in `kube-system` rather than a dedicated ServiceAccount with minimal RBAC. If the container image is compromised (supply chain attack on `rancher/k3s`), it has full host access.",
+      "impact": "A compromised `rancher/k3s` container image in this CronJob would gain: (1) root access to the host via `privileged: true`, (2) full network access via `hostNetwork: true`, (3) read-write access to all k3s data including etcd, TLS certificates, and the kubeconfig. This effectively means complete cluster and node compromise through a single container image supply chain attack.",
+      "verified": true,
+      "attack_path": "1. Attacker compromises the `rancher/k3s:v1.30.2-k3s1` image (supply chain) or gains access to modify the CronJob spec.\n2. The CronJob runs every 6 hours in `kube-system` namespace.\n3. Container runs as `privileged: true` with `hostNetwork: true`.\n4. Container has read-write access to `/var/lib/rancher/k3s` (etcd data, TLS certs, tokens).\n5. Attacker code executes with full host privileges, can install rootkits, exfiltrate etcd data, or pivot to other nodes.",
+      "evidence": [
+        "kubernetes/backup/etcd-snapshot.yaml:22 — hostNetwork: true",
+        "kubernetes/backup/etcd-snapshot.yaml:46 — privileged: true",
+        "kubernetes/backup/etcd-snapshot.yaml:54-57 — hostPath mount to /var/lib/rancher/k3s (read-write)",
+        "kubernetes/backup/etcd-snapshot.yaml:30-31 — no serviceAccountName specified"
+      ],
+      "remediation": "1. Pin the image to a specific digest rather than a mutable tag:\n```yaml\nimage: rancher/k3s:v1.30.2-k3s1@sha256:<digest>\n```\n2. Add a dedicated ServiceAccount with no additional RBAC permissions:\n```yaml\nserviceAccountName: etcd-snapshot\nautomountServiceAccountToken: false\n```\n3. Mount the k3s data directory as read-only where possible (snapshot save may require write access to the snapshot directory only).",
+      "poc_video_notes": "Supply chain attack scenario — not safely demonstrable without modifying production images."
+    },
+    {
+      "id": "VULN-007",
+      "severity": "medium",
+      "location": "terraform/cloud-init/control-plane.yaml.tftpl:107-110",
+      "description": "The Cilium CLI installation on the first control-plane node fetches the latest version tag from a raw GitHub URL (`raw.githubusercontent.com`) and then downloads the corresponding binary. This is a supply chain risk: the `stable.txt` file determines which version to install, and a compromise of the GitHub repository or a MITM attack could inject a malicious binary. The version is not pinned or verified against a checksum.",
+      "impact": "An attacker who compromises the `cilium/cilium-cli` GitHub repo (or performs a MITM on the TLS connection during cloud-init) can serve a malicious Cilium CLI binary. This binary runs as root during initial cluster bootstrapping and installs the CNI plugin — it has full control over all cluster networking and can intercept, modify, or exfiltrate all pod-to-pod traffic.",
+      "verified": true,
+      "attack_path": "1. During cloud-init on the first control-plane node, the script fetches `https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt`.\n2. The returned version string determines the download URL for `cilium-linux-amd64.tar.gz`.\n3. No checksum verification is performed on the downloaded binary.\n4. The binary is extracted to `/usr/local/bin` and executed as root.\n5. A compromised binary could install a backdoored CNI plugin, intercept all cluster network traffic, or establish persistent access.",
+      "evidence": [
+        "terraform/cloud-init/control-plane.yaml.tftpl:107 — CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)",
+        "terraform/cloud-init/control-plane.yaml.tftpl:108-110 — curl download without checksum verification",
+        "terraform/cloud-init/control-plane.yaml.tftpl:110 — tar xzvf directly to /usr/local/bin"
+      ],
+      "remediation": "Pin the Cilium CLI version and verify checksums:\n\n```yaml\n- |\n  CILIUM_CLI_VERSION=\"v0.16.4\"\n  curl -L --fail --remote-name-all \\\n    \"https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-amd64.tar.gz\" \\\n    \"https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-amd64.tar.gz.sha256sum\"\n  sha256sum --check cilium-linux-amd64.tar.gz.sha256sum\n  tar xzvf cilium-linux-amd64.tar.gz -C /usr/local/bin\n```",
+      "poc_video_notes": "Supply chain attack scenario — not safely demonstrable without tampering with upstream repositories."
+    }
+  ]
+}
